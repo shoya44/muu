@@ -8,7 +8,7 @@
 // at the top, and from the column itself only when there is nothing left to
 // scroll up; otherwise the column scrolls, which is what a pull there means.
 const FOLLOW = 6;    // A movement smaller than this has not chosen a direction yet.
-const DISMISS = 96;  // Past this a downward pull closes rather than snapping back.
+const DISMISS = 80;  // Past this a downward pull closes rather than snapping back.
 
 export function setupSheet(dialog, { opening }) {
   const handle = document.getElementById('sheet-gesture');
@@ -23,8 +23,12 @@ export function setupSheet(dialog, { opening }) {
     offset(0); opening();
     document.body.classList.add('player-open');
     dialog.showModal();
-    column.scrollTop = 0;
+    column.scrollTop = 0; atTop();
   }
+  // 一番上にいる間は下向きのパンをブラウザに渡さず、こちらで「閉じる」として扱う。
+  // 上向き（続きを読むスクロール）はブラウザに任せる。
+  const atTop = () => column.classList.toggle('at-top', column.scrollTop <= 0);
+  column.addEventListener('scroll', atTop, { passive: true });
   dialog.addEventListener('close', () => {
     document.body.classList.remove('player-open');
     dialog.style.transition = '';

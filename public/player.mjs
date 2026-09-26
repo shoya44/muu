@@ -36,8 +36,8 @@ export class Player {
       play: () => this.play(), pause: () => this.pause(),
       nexttrack: () => this.next(), previoustrack: () => this.previousTrack(),
       seekto: detail => this.seek(detail.seekTime),
-      seekbackward: detail => this.seek(this.audio.currentTime - (detail.seekOffset || this.skip || 10)),
-      seekforward: detail => this.seek(this.audio.currentTime + (detail.seekOffset || this.skip || 10)),
+      // iOS はスキップの handler があるとロック画面の前/次をスキップに置き換える。曲送りを残すため登録しない。
+      seekbackward: null, seekforward: null,
     };
     for (const [action, handler] of Object.entries(handlers)) {
       try { navigator.mediaSession.setActionHandler(action, handler); } catch { /* unsupported */ }

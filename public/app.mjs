@@ -11,7 +11,7 @@ import { VERSION } from './version.mjs';
 
 const $ = id => document.getElementById(id);
 let tracks = [], saved = new Map(), store = PL.emptyStore();
-let settings = { sort: 'new', autosave: false, skip: 10, resume: true, password: '' };
+let settings = { sort: 'new', autosave: false, resume: true, password: '' };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '';
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
 let activeKey, queueShape;
@@ -374,7 +374,7 @@ $('chooser-cancel').onclick = () => $('chooser').close();
 // ---- Settings ----
 async function renderSettings() {
   $('version').textContent = VERSION;
-  $('opt-autosave').checked = settings.autosave; $('opt-skip').value = String(settings.skip); $('opt-resume').checked = settings.resume;
+  $('opt-autosave').checked = settings.autosave; $('opt-resume').checked = settings.resume;
   const savedList = tracks.filter(track => saved.has(track.id));
   const orphanIDs = [...saved.keys()].filter(id => !trackByID(id));
   const used = [...saved.values()].reduce((a, b) => a + b, 0);
@@ -404,7 +404,6 @@ $('clear-saved').onclick = async () => {
   player.pause(); await clearSaved(); await refreshSaved(); toast('Removed all');
 };
 $('opt-autosave').onchange = () => { settings.autosave = $('opt-autosave').checked; persistSettings(); };
-$('opt-skip').onchange = () => { settings.skip = Number($('opt-skip').value); player.skip = settings.skip; persistSettings(); };
 $('opt-resume').onchange = () => { settings.resume = $('opt-resume').checked; persistSettings(); };
 $('check-update').onclick = () => checkUpdate(true);
 
@@ -520,7 +519,6 @@ async function applyUpdate() {
 async function start() {
   const [library, savedSettings, playlists, playerState] = await Promise.all([readState('library'), readState('settings'), readState('playlists'), readState('player')]).catch(() => []);
   settings = { ...settings, ...(savedSettings || {}) };
-  player.skip = settings.skip;
   store = PL.normalise(playlists);
   saved = await savedTracks();
   if (library?.tracks) { tracks = library.tracks; libraryEtag = library.etag || ''; for (const t of tracks) known.add(t.id); }
