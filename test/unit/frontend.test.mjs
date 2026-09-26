@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
@@ -43,6 +43,7 @@ test('labels for sizes and total durations', () => {
   assert.equal(durationLabel(20), '< 1 min');
   assert.equal(durationLabel(59 * 60 + 20), '59 min');
   assert.equal(durationLabel(3900), '1h 05m');
+  assert.equal(tracksLabel(1), '1 track'); assert.equal(tracksLabel(12), '12 tracks');
 });
 
 test('playlists: order, resolve, normalise', () => {

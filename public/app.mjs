@@ -5,7 +5,7 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder, tracksLabel } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -298,7 +298,7 @@ function folderHead({ folder, tracks: members }, open) {
   toggle.setAttribute('aria-expanded', String(open)); toggle.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} ${folder}`);
   const chevron = document.createElement('span'); chevron.className = 'icon chevron'; chevron.innerHTML = icon('keyboard_arrow_down');
   const name = document.createElement('span'); name.className = 'folder-name'; name.textContent = folder;
-  const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${members.length} · ${durationLabel(members.reduce((sum, track) => sum + (track.duration || 0), 0))}`;
+  const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${tracksLabel(members.length)} / ${durationLabel(members.reduce((sum, track) => sum + (track.duration || 0), 0))}`;
   toggle.append(chevron, name, count);
   toggle.onclick = () => {
     settings.collapsed = open ? [...settings.collapsed, folder] : settings.collapsed.filter(name => name !== folder);
@@ -368,7 +368,7 @@ function cardFor(playlist) {
   const name = document.createElement('span'); name.className = 'card-name'; name.textContent = playlist.name;
   const rows = PL.resolveTracks(playlist, trackByID, saved);
   const count = document.createElement('span'); count.className = 'card-count';
-  count.textContent = `${playlist.trackIds.length} tracks${rows.length ? ` · ${durationLabel(rows.reduce((sum, track) => sum + (track.duration || 0), 0))}` : ''}`;
+  count.textContent = `${tracksLabel(playlist.trackIds.length)}${rows.length ? ` / ${durationLabel(rows.reduce((sum, track) => sum + (track.duration || 0), 0))}` : ''}`;
   card.append(name, count);
   card.onclick = () => { currentPlaylist = playlist.id; renderPlaylists(); $('fab-add').hidden = false; };
   return card;
@@ -481,7 +481,7 @@ async function renderSettings() {
   const percent = est?.quota ? Math.min(100, Math.round(((est.usage || used) / est.quota) * 100)) : 0;
   $('gauge-fill').style.width = `${percent}%`;
   $('gauge').setAttribute('aria-valuenow', String(percent));
-  $('storage-line').textContent = `${saved.size} tracks · ${bytesLabel(used)}${est?.quota ? ` · ${percent}% of ${bytesLabel(est.quota)}` : ''}`;
+  $('storage-line').textContent = `${tracksLabel(saved.size)} / ${bytesLabel(used)}${est?.quota ? ` / ${percent}% of ${bytesLabel(est.quota)}` : ''}`;
   const rows = [...savedList, ...orphanIDs.map(id => ({ id, folder: id.split('/')[0], title: id.split('/').pop().replace(/\.mp3$/i, ''), duration: 0, size: saved.get(id), gone: true }))];
   $('saved-list').replaceChildren(...rows.map(track => {
     const row = document.createElement('div'); row.className = `track${track.gone ? ' gone' : ''}`;
@@ -534,7 +534,7 @@ function renderAdmin() {
     const summary = document.createElement('summary');
     const chevron = document.createElement('span'); chevron.className = 'icon chevron'; chevron.innerHTML = icon('keyboard_arrow_down');
     const name = document.createElement('span'); name.className = 'folder-name'; name.textContent = folder;
-    const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${members.length} · ${megabytes(members.reduce((sum, track) => sum + track.size, 0))}`;
+    const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${tracksLabel(members.length)} / ${megabytes(members.reduce((sum, track) => sum + track.size, 0))}`;
     summary.append(chevron, name, count);
     const list = document.createElement('div'); list.className = 'saved-list';
     list.append(...members.map(track => {

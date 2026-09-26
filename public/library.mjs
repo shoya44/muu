@@ -22,6 +22,8 @@ export const megabytes = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 // 容量の表示。1 GB 以上は GB で、それ未満は MB で。
 export const bytesLabel = bytes => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : megabytes(bytes));
 export const time = seconds => `${Math.floor((seconds || 0) / 60)}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
+// 曲数の表示。単位を必ず付ける。
+export const tracksLabel = n => `${n} ${n === 1 ? 'track' : 'tracks'}`;
 // 合計時間の表示。1 時間以上は "1h 05m"、それ未満は "12 min"。
 export function durationLabel(seconds) {
   const minutes = Math.round((seconds || 0) / 60);

@@ -81,7 +81,7 @@ test('playlist survives reload', async ({ page }) => {
   });
   await page.reload();
   await page.getByRole('button', { name: 'Playlists' }).click();
-  await expect(page.getByRole('button', { name: /Road/ })).toContainText('1 tracks');
+  await expect(page.getByRole('button', { name: /Road/ })).toContainText('1 track');
 });
 
 test('service worker update activates on request', async ({ page }) => {
