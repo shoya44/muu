@@ -8,7 +8,7 @@ const NAMES = [
   'play_arrow', 'pause', 'skip_next', 'skip_previous', 'shuffle',
   'more_horiz', 'download', 'download_done', 'progress_activity',
   'sort', 'folder', 'add', 'delete', 'close', 'keyboard_arrow_down',
-  'drag_handle', 'playlist_add', 'playlist_play', 'info', 'upload',
+  'drag_handle', 'playlist_add', 'playlist_play', 'info', 'share', 'upload',
   'refresh', 'remove', 'music_note', 'key', 'check', 'cloud_off', 'check_circle', 'radio_button_unchecked',
 ];
 

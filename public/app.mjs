@@ -5,7 +5,7 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -212,9 +212,33 @@ function trackMenu(track, playlist) {
   return [
     { icon: 'playlist_play', label: 'Play next', run: () => { player.playNext(track); toast('Added to queue'); }, disabled: !playableNow(track) || player.track?.id === track.id },
     { icon: 'playlist_add', label: 'Add to playlist', run: () => pickPlaylist([track.id]) },
+    { icon: 'share', label: 'Share', run: () => shareTrack(track), disabled: track.gone && !saved.has(track.id) },
     { icon: 'info', label: 'Details', run: () => showDetails(track) },
     playlist && { icon: 'remove', label: 'Remove', danger: true, run: () => removeFromPlaylist(playlist, track) },
   ];
+}
+// 共有。読み取りは無認証なので、リンクは配信 URL そのもの。OS の共有シートがファイルを受けるなら本体を渡す（Files に保存、AirDrop）。
+let sharing = false;
+async function shareTrack(track) {
+  if (sharing) return;
+  const url = new URL(mediaURL(track), location.href).href;
+  if (!navigator.share) {
+    try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast(url); }
+    return;
+  }
+  sharing = true;
+  try {
+    let data = { title: track.title, url };
+    if (navigator.canShare) {
+      try {
+        const file = new File([await (await fetch(mediaURL(track))).blob()], `${track.title}.mp3`, { type: 'audio/mpeg' });
+        if (navigator.canShare({ files: [file] })) data = { title: track.title, files: [file] };
+      } catch { /* 取れなければリンクで */ }
+    }
+    await navigator.share(data);
+  } catch (error) {
+    if (error.name !== 'AbortError') { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast("Couldn't share"); } }
+  } finally { sharing = false; }
 }
 function showDetails(track) {
   $('detail-title').textContent = track.title;
