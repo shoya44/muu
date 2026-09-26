@@ -7,11 +7,11 @@ import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
 import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, time, saveControl, mergeLibrary, safeFileName, titleOf } from './library.mjs';
 import * as PL from './playlists.mjs';
-import { VERSION } from './version.mjs';
+import { VERSION, BUILT } from './version.mjs';
 
 const $ = id => document.getElementById(id);
 let tracks = [], saved = new Map(), store = PL.emptyStore();
-let settings = { sort: 'new', autosave: false, resume: true, password: '' };
+let settings = { sort: 'new', autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false } };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '', cloud = { used: 0, limit: 0 };
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
 let activeKey, queueShape, selecting = null;
@@ -388,6 +388,8 @@ $('chooser-cancel').onclick = () => $('chooser').close();
 // ---- Settings ----
 async function renderSettings() {
   $('version').textContent = VERSION;
+  $('built').textContent = BUILT ? new Date(BUILT).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'dev';
+  for (const card of document.querySelectorAll('#view-settings details')) card.open = settings.open?.[card.dataset.section] ?? card.open;
   $('opt-autosave').checked = settings.autosave; $('opt-resume').checked = settings.resume;
   const savedList = tracks.filter(track => saved.has(track.id));
   const orphanIDs = [...saved.keys()].filter(id => !trackByID(id));
@@ -420,6 +422,7 @@ $('clear-saved').onclick = async () => {
 $('opt-autosave').onchange = () => { settings.autosave = $('opt-autosave').checked; persistSettings(); };
 $('opt-resume').onchange = () => { settings.resume = $('opt-resume').checked; persistSettings(); };
 $('check-update').onclick = () => checkUpdate(true);
+for (const card of document.querySelectorAll('#view-settings details')) card.addEventListener('toggle', () => { settings.open = { ...settings.open, [card.dataset.section]: card.open }; persistSettings(); });
 
 const authHeaders = () => ({ authorization: `Bearer ${settings.password}` });
 async function verifyPassword() {

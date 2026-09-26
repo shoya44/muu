@@ -17,6 +17,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: node scripts/stamp.mjs
       - if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy
       - if: env.CLOUDFLARE_API_TOKEN == ''

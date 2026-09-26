@@ -1,7 +1,7 @@
 // muu Worker: 静的 PWA と API を同一オリジンで配信する。API の一覧は docs/design.md 4 章。
 import { buildLibrary, etagFor, validName, isTrackKey, COVER_NAME } from './library.mjs';
 import { authorize } from './auth.mjs';
-import { VERSION } from '../public/version.mjs';
+import { VERSION, BUILT } from '../public/version.mjs';
 
 const LIBRARY_TTL = 30; // 秒。一覧は R2 の list() を叩き直すより短く保つ。
 const MAX_UPLOAD = 95 * 1024 * 1024;
@@ -18,7 +18,7 @@ export default {
       if (root === 'api') return api(request, env, ctx, rest, url);
       if (root === 'media' && rest.length === 1) return media(request, env, decodeURIComponent(rest[0]));
       if (root === 'covers' && rest.length === 1) return cover(request, env, decodeURIComponent(rest[0]));
-      if (url.pathname === '/version.json') return json({ version: VERSION }, 200, { 'cache-control': 'no-cache' });
+      if (url.pathname === '/version.json') return json({ version: VERSION, built: BUILT }, 200, { 'cache-control': 'no-cache' });
       return env.ASSETS.fetch(request);
     } catch (error) {
       console.error(error);

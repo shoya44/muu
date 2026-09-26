@@ -68,22 +68,22 @@
   </section>
 
   <section id="view-settings" class="view" data-view="settings" hidden>
-    <section class="card">
-      <h3><span data-icon="download_done"></span>Storage</h3>
+    <details class="card" data-section="storage">
+      <summary><span data-icon="download_done"></span>Storage<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
       <div class="gauge" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="gauge"><span id="gauge-fill"></span></div>
       <p id="storage-line" class="muted"></p>
       <div id="saved-list" class="saved-list"></div>
       <button id="clear-saved" class="text-button danger" hidden><span data-icon="delete"></span>Remove all saved</button>
-    </section>
+    </details>
 
-    <section class="card">
-      <h3><span data-icon="play_arrow"></span>Playback</h3>
+    <details class="card" data-section="playback">
+      <summary><span data-icon="play_arrow"></span>Playback<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
       <label class="row"><span>Auto save new tracks</span><input id="opt-autosave" type="checkbox" class="switch"></label>
       <label class="row"><span>Resume on launch</span><input id="opt-resume" type="checkbox" class="switch"></label>
-    </section>
+    </details>
 
-    <section class="card">
-      <h3><span data-icon="key"></span>Library</h3>
+    <details class="card" data-section="library">
+      <summary><span data-icon="key"></span>Library<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
       <form id="password-form" class="row">
         <input id="password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">
         <button class="icon" type="submit" aria-label="Save password"><span data-icon="check"></span></button>
@@ -100,13 +100,14 @@
         <p id="cloud-line" class="muted"></p>
         <div id="admin-tracks" class="saved-list"></div>
       </div>
-    </section>
+    </details>
 
-    <section class="card">
-      <h3><span data-icon="info"></span>App</h3>
+    <details class="card" data-section="app">
+      <summary><span data-icon="info"></span>App<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
       <div class="row"><span>Version</span><span id="version" class="muted"></span></div>
+      <div class="row"><span>Updated</span><span id="built" class="muted"></span></div>
       <button id="check-update" class="text-button"><span data-icon="refresh"></span>Check for update</button>
-    </section>
+    </details>
   </section>
 </main>
 
