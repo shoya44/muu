@@ -17,6 +17,12 @@
 </head>
 <body>
 <div id="loading" class="loading" hidden>Loading...</div>
+<div id="install" class="install" hidden>
+  <span data-icon="add"></span>
+  <span id="install-text" class="install-text">Add to Home Screen for offline play</span>
+  <button id="install-go" class="text-button" hidden>Install</button>
+  <button id="install-close" class="icon" aria-label="Dismiss"><span data-icon="close"></span></button>
+</div>
 
 <main>
   <section id="view-home" class="view" data-view="home">
@@ -119,7 +125,7 @@
 
 <dialog id="now" class="sheet" aria-label="Now playing">
   <div id="sheet-gesture" class="handle"><span></span></div>
-  <div id="sheet-scroll" class="sheet-scroll">
+  <div id="sheet-scroll" class="sheet-scroll" tabindex="-1">
     <img id="sheet-cover" class="sheet-cover" alt="" src="/icon-512.png">
     <h2 id="now-title" class="now-title"></h2>
     <p id="now-subtitle" class="muted"></p>

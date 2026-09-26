@@ -550,6 +550,19 @@ function adoptWaiting(reg) {
   } else sessionStorage.removeItem('muu-adopted');
 }
 
+// ---- ホーム画面追加の案内（ブラウザで開いたときだけ） ----
+let installPrompt;
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installPrompt = event; $('install-go').hidden = false; });
+function offerInstall() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (standalone || settings.installDismissed) return;
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  $('install-text').textContent = ios ? 'Share → Add to Home Screen for offline play' : 'Add to Home Screen for offline play';
+  $('install').hidden = false;
+}
+$('install-go').onclick = async () => { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice.catch(() => {}); installPrompt = undefined; $('install').hidden = true; };
+$('install-close').onclick = () => { $('install').hidden = true; settings.installDismissed = true; persistSettings(); };
+
 // ---- 起動 ----
 async function start() {
   const [library, savedSettings, playlists, playerState] = await Promise.all([readState('library'), readState('settings'), readState('playlists'), readState('player')]).catch(() => []);
@@ -558,7 +571,7 @@ async function start() {
   saved = await savedTracks();
   if (library?.tracks) { tracks = library.tracks; libraryEtag = library.etag || ''; for (const t of tracks) known.add(t.id); }
   else $('loading').hidden = false;
-  renderAll();
+  renderAll(); offerInstall();
   if (settings.resume && playerState) player.restore(playerState);
   renderPlayer();
   if ('serviceWorker' in navigator) {

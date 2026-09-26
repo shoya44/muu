@@ -23,6 +23,8 @@ export function setupSheet(dialog, { opening }) {
     offset(0); opening();
     document.body.classList.add('player-open');
     dialog.showModal();
+    // 自動フォーカスがキューの先頭に当たって枠が出ないよう、列そのものへ移す。
+    column.focus({ preventScroll: true });
     column.scrollTop = 0; atTop();
   }
   // 一番上にいる間は下向きのパンをブラウザに渡さず、こちらで「閉じる」として扱う。
