@@ -88,6 +88,5 @@ export function setupSheet(dialog, { opening }) {
   // A cancelled pointer still finishes from where it was last seen, rather
   // than leaving the sheet mid-pull with nothing decided.
   window.addEventListener('pointercancel', () => release());
-  dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientY < r.top || event.clientX < r.left || event.clientX > r.right) dialog.close(); } });
   return { open };
 }

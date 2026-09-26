@@ -9,7 +9,7 @@ export class Player {
     this.audio = audio; this.changed = changed; this.message = message; this.persist = persist;
     this.queue = []; this.order = []; this.history = [];
     this.index = -1; this.pendingPosition = 0; this.failed = new Set(); this.wantsPlayback = false;
-    this.shuffle = false;
+    this.shuffle = false; this.repeat = false;
     audio.addEventListener('loadedmetadata', () => {
       if (this.pendingPosition) audio.currentTime = Math.min(this.pendingPosition, Math.max(0, audio.duration - 0.2));
       this.pendingPosition = 0; changed();
@@ -17,7 +17,7 @@ export class Player {
     for (const type of ['play', 'pause', 'durationchange']) audio.addEventListener(type, () => { if (type === 'play') this.configureMediaSession(); changed(); this.save(); });
     audio.addEventListener('timeupdate', () => { changed(); if (Date.now() - (this.lastSave || 0) > 3000) this.save(); });
     audio.addEventListener('seeked', () => this.save());
-    audio.addEventListener('ended', () => this.next(true));
+    audio.addEventListener('ended', () => this.next());
     audio.addEventListener('error', () => {
       if (!this.track) return;
       if (!this.failed.has(this.track.id)) { this.failed.add(this.track.id); message(`Can't play: ${this.track.title}`); }
@@ -28,7 +28,6 @@ export class Player {
   }
   get item() { return this.queue[this.index]; }
   get track() { return this.queue[this.index]?.track; }
-  get playable() { return this.queue.filter(item => !this.failed.has(item.track.id)); }
 
   configureMediaSession() {
     if (!('mediaSession' in navigator)) return;
@@ -49,7 +48,7 @@ export class Player {
     this.index = Number.isInteger(state.index) ? state.index : 0;
     if (!this.queue[this.index]) return;
     this.order = state.order?.length === this.queue.length ? state.order : this.queue.map(item => item.key);
-    this.shuffle = Boolean(state.shuffle);
+    this.shuffle = Boolean(state.shuffle); this.repeat = Boolean(state.repeat);
     this.history = Array.isArray(state.history) ? state.history : [];
     this.load(autoplay, state.position || 0);
   }
@@ -79,6 +78,7 @@ export class Player {
     this.changed(); this.save();
   }
   setShuffle(value) { this.shuffle = value; this.applyOrder(); }
+  setRepeat(value) { this.repeat = value; this.changed(); this.save(); }
 
   playNext(track) {
     if (!this.queue.length) {
@@ -139,11 +139,17 @@ export class Player {
   }
   pause() { this.wantsPlayback = false; this.audio.pause(); }
   toggle() { if (this.audio.paused) this.play(); else this.pause(); }
+  // キューの末尾に来たら止まる。リピート中は先頭へ戻り、シャッフル中なら並べ直す。
   next() {
     let next = this.index + 1;
     while (next < this.queue.length && this.failed.has(this.queue[next].track.id)) next++;
-    if (next >= this.queue.length) { this.pause(); this.save(); return; }
-    if (this.item) this.history.push(this.item.key);
+    if (next >= this.queue.length) {
+      if (!this.repeat || !this.queue.some(item => !this.failed.has(item.track.id))) { this.pause(); this.save(); return; }
+      this.index = -1; this.history = [];
+      if (this.shuffle) this.applyOrder();
+      next = 0;
+      while (this.failed.has(this.queue[next].track.id)) next++;
+    } else if (this.item) this.history.push(this.item.key);
     this.index = next; this.load(true);
   }
   previous() { if (this.audio.currentTime > 3) this.seek(0); else this.previousTrack(); }
@@ -160,6 +166,6 @@ export class Player {
   save(position = this.pendingPosition || this.audio.currentTime || 0) {
     if (!this.track) return Promise.resolve();
     this.lastSave = Date.now();
-    return this.persist({ queue: this.queue, order: this.order, index: this.index, position, shuffle: this.shuffle, history: this.history.slice(-100) });
+    return this.persist({ queue: this.queue, order: this.order, index: this.index, position, shuffle: this.shuffle, repeat: this.repeat, history: this.history.slice(-100) });
   }
 }

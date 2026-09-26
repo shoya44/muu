@@ -12,6 +12,9 @@ export function setupPopover(element) {
   }
   function open(anchor, items) {
     close();
+    // モーダルの dialog（再生画面）から開くときは、その中へ移して最前面に出す。
+    const host = anchor.closest('dialog') || document.body;
+    if (element.parentNode !== host) host.append(element);
     element.replaceChildren(...items.filter(Boolean).map(item => {
       const button = document.createElement('button');
       button.setAttribute('role', 'menuitem');

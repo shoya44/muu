@@ -4,8 +4,6 @@
 :root {
   /* Colour: surfaces */
   --md-sys-color-background: #212129;
-  --md-sys-color-surface: #212129;
-  --md-sys-color-surface-container-lowest: #1a1a21;
   --md-sys-color-surface-container-low: #2a2c38;
   --md-sys-color-surface-container: #323949;
   --md-sys-color-surface-container-high: #3d3e51;
@@ -19,12 +17,9 @@
   /* Colour: accent。塗り専用。文字色には使わない。 */
   --md-sys-color-primary: #4c5265;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #3d3e51;
-  --md-sys-color-on-primary-container: #e8e8ee;
   /* 明るい差し色が必要な箇所（進捗の先端、選択中のアイコン）。落ち着いた青灰。 */
   --md-sys-color-tertiary: #9aa3bd;
   --md-sys-color-error: #d99a92;
-  --md-sys-color-on-error: #2b0f0a;
   --md-sys-color-inverse-surface: #e8e8ee;
   --md-sys-color-inverse-on-surface: #212129;
 

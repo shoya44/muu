@@ -33,12 +33,13 @@
       <button id="select-add" class="icon" aria-label="Add to playlist"><span data-icon="playlist_add"></span></button>
     </div>
     <div id="home-bar" class="toolbar">
-      <label class="toggle" title="Save all">
+      <button id="shuffle-all" class="chip" aria-label="Shuffle all"><span data-icon="shuffle"></span>Shuffle</button>
+      <span class="spacer"></span>
+      <label class="toggle" title="Keep every track on this device">
         <input id="save-all" type="checkbox" aria-label="Save all tracks">
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        <span class="toggle-icon" data-icon="download"></span>
+        <span class="toggle-label"><span data-icon="download"></span>All</span>
       </label>
-      <span class="spacer"></span>
       <button id="sort" class="chip" aria-label="Sort"><span data-icon="sort"></span><span id="sort-label">New</span></button>
     </div>
     <p id="save-status" class="status"></p>
@@ -57,8 +58,10 @@
     </div>
     <div id="playlist-detail" hidden>
       <div class="toolbar">
-        <button id="playlist-back" class="icon" aria-label="Back"><span data-icon="keyboard_arrow_down" class="rotate90"></span></button>
+        <button id="playlist-back" class="icon" aria-label="Back"><span data-icon="arrow_back"></span></button>
         <h2 id="playlist-title" class="title"></h2>
+        <button id="playlist-play" class="icon" aria-label="Play all"><span data-icon="play_arrow"></span></button>
+        <button id="playlist-shuffle" class="icon" aria-label="Shuffle"><span data-icon="shuffle"></span></button>
         <button id="playlist-menu" class="icon" aria-label="Playlist options"><span data-icon="more_horiz"></span></button>
       </div>
       <div id="playlist-tracks" class="tracks" role="list"></div>
@@ -127,6 +130,12 @@
 
 <dialog id="now" class="sheet" aria-label="Now playing">
   <div id="sheet-gesture" class="handle"><span></span></div>
+  <div class="toolbar sheet-bar">
+    <button id="sheet-close" class="icon" aria-label="Close"><span data-icon="keyboard_arrow_down"></span></button>
+    <span class="spacer"></span>
+    <button id="sheet-save" class="icon" aria-label="Save to device"></button>
+    <button id="sheet-menu" class="icon" aria-label="More"><span data-icon="more_horiz"></span></button>
+  </div>
   <div id="sheet-scroll" class="sheet-scroll" tabindex="-1">
     <img id="sheet-cover" class="sheet-cover" alt="" src="/icon-512.png">
     <h2 id="now-title" class="now-title"></h2>
@@ -144,7 +153,7 @@
       <button class="icon big" data-player="previous" aria-label="Previous"><span data-icon="skip_previous"></span></button>
       <button class="icon huge" data-player="toggle" aria-label="Play"></button>
       <button class="icon big" data-player="next" aria-label="Next"><span data-icon="skip_next"></span></button>
-      <button id="sheet-close" class="icon" aria-label="Close"><span data-icon="keyboard_arrow_down"></span></button>
+      <button id="repeat" class="icon" aria-label="Repeat" aria-pressed="false"><span data-icon="repeat"></span></button>
     </div>
   </div>
 </dialog>

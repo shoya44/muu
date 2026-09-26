@@ -5,7 +5,7 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, time, saveControl, mergeLibrary, safeFileName, titleOf } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -33,6 +33,8 @@ function confirm(text, { danger = true, ok = 'OK' } = {}) {
     $('confirm-ok').textContent = ok;
     $('confirm-ok').classList.toggle('danger', danger);
     const dialog = $('confirm');
+    // Escape や Android の戻るは引数なしで閉じ、前回の returnValue が残る。必ず空に戻してから開く。
+    dialog.returnValue = '';
     dialog.onclose = () => resolve(dialog.returnValue === 'ok');
     dialog.showModal();
   });
@@ -44,6 +46,7 @@ function prompt(title, value = '') {
     $('prompt-title').textContent = title;
     $('prompt-input').value = value;
     const dialog = $('prompt');
+    dialog.returnValue = '';
     dialog.onclose = () => resolve(dialog.returnValue === 'ok' ? $('prompt-input').value.trim() : null);
     dialog.showModal();
     $('prompt-input').focus();
@@ -81,13 +84,16 @@ const player = new Player($('audio'), { changed: renderPlayer, message: toast, p
 const sheet = setupSheet($('now'), { opening: renderQueue });
 $('mini-open').onclick = () => sheet.open();
 $('sheet-close').onclick = () => $('now').close();
-// ミニプレイヤーを上へスワイプしても開く。
+// ミニプレイヤーを上へスワイプしても開く。シークバーの上で始まった指は除く。
 let swipe;
-$('mini').addEventListener('pointerdown', e => { swipe = { y: e.clientY, id: e.pointerId }; });
+$('mini').addEventListener('pointerdown', e => { if (e.target !== $('mini-seek')) swipe = { y: e.clientY, id: e.pointerId }; });
 $('mini').addEventListener('pointermove', e => { if (swipe && e.pointerId === swipe.id && swipe.y - e.clientY > 40) { swipe = undefined; sheet.open(); } });
 $('mini').addEventListener('pointerup', () => { swipe = undefined; });
 for (const button of document.querySelectorAll('[data-player]')) button.onclick = () => player[button.dataset.player]();
 $('shuffle').onclick = () => player.setShuffle(!player.shuffle);
+$('repeat').onclick = () => player.setRepeat(!player.repeat);
+$('sheet-save').onclick = () => { const track = player.track; if (track) (saved.has(track.id) ? unsave(track) : download([track])); };
+$('sheet-menu').onclick = () => { const track = player.track; if (track) popover.open($('sheet-menu'), trackMenu(track)); };
 const seeks = [$('sheet-seek'), $('mini-seek')];
 for (const seek of seeks) {
   seek.addEventListener('pointerdown', () => { seek.dataset.dragging = 'true'; });
@@ -102,10 +108,16 @@ function renderPlayer() {
   $('mini').hidden = !track;
   if (!track) return;
   $('mini-title').textContent = $('now-title').textContent = track.title;
+  const paused = player.audio.paused;
   const cover = coverURL(track) || '/icon-512.png';
   const image = $('sheet-cover');
-  if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; }; }
-  const paused = player.audio.paused;
+  if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; image.classList.add('placeholder'); }; }
+  image.classList.toggle('placeholder', !coverURL(track));
+  const control = saveControl({ saved: saved.has(track.id), saving: savingID === track.id, gone: track.gone, playing: !paused });
+  const sheetSave = $('sheet-save');
+  sheetSave.className = `icon${control.saved ? ' on' : ''}${control.busy ? ' busy' : ''}`;
+  if (sheetSave.dataset.state !== control.icon) { sheetSave.innerHTML = icon(control.icon); sheetSave.dataset.state = control.icon; }
+  sheetSave.disabled = Boolean(control.disabled); sheetSave.setAttribute('aria-label', control.label);
   for (const button of document.querySelectorAll('[data-player="toggle"]')) {
     const state = paused ? 'play_arrow' : 'pause';
     if (button.dataset.state !== state) { button.innerHTML = icon(state); button.dataset.state = state; }
@@ -120,9 +132,11 @@ function renderPlayer() {
   }
   if (seeks.every(seek => seek.dataset.dragging !== 'true')) $('sheet-elapsed').textContent = time(position);
   $('sheet-duration').textContent = time(duration);
-  $('now-subtitle').textContent = `${player.index + 1} / ${player.queue.length}${track.gone ? ' · offline copy' : ''}`;
+  $('now-subtitle').textContent = `${track.folder}${track.gone ? ' · offline copy' : ''}`;
   $('shuffle').setAttribute('aria-pressed', String(player.shuffle));
   $('shuffle').classList.toggle('on', player.shuffle);
+  $('repeat').setAttribute('aria-pressed', String(player.repeat));
+  $('repeat').classList.toggle('on', player.repeat);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = paused ? 'paused' : 'playing';
   const shape = player.queue.map(item => item.key).join(' ');
   if (activeKey !== player.item?.key || queueShape !== shape) {
@@ -162,10 +176,12 @@ function makeRow(track, { list, playlist, select } = {}) {
   const info = document.createElement('span'); info.className = 'track-info';
   const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
   const meta = document.createElement('span'); meta.className = 'track-meta';
-  meta.textContent = track.duration ? time(track.duration) : '--:--';
+  meta.textContent = `${track.duration ? time(track.duration) : '--:--'} · ${track.folder}`;
   info.append(title, meta); play.append(info);
   play.onclick = () => {
     if (select) { toggleSelect(track.id); return; }
+    // 再生中の曲をもう一度タップしたら、頭出しではなく一時停止 / 再開。
+    if (player.track?.id === track.id) { player.toggle(); return; }
     const candidates = list.filter(item => playableNow(item) || item.id === track.id);
     player.start(candidates, track.id);
     if (navigator.onLine) void refresh();
@@ -185,15 +201,19 @@ function makeRow(track, { list, playlist, select } = {}) {
   save.onclick = () => (control.saved ? unsave(track) : download([track]));
   const menu = document.createElement('button'); menu.className = 'track-menu icon'; menu.innerHTML = icon('more_horiz');
   menu.setAttribute('aria-label', 'More');
-  menu.onclick = () => popover.open(menu, [
-    { icon: 'playlist_play', label: 'Play next', run: () => { player.playNext(track); toast('Added to queue'); }, disabled: !playableNow(track) },
-    { icon: 'playlist_add', label: 'Add to playlist', run: () => pickPlaylist([track.id]) },
-    { icon: 'info', label: 'Details', run: () => showDetails(track) },
-    playlist && { icon: 'remove', label: 'Remove', danger: true, run: () => removeFromPlaylist(playlist, track) },
-  ]);
+  menu.onclick = () => popover.open(menu, trackMenu(track, playlist));
   row.append(play, save, menu);
   if (playlist) { const handle = document.createElement('span'); handle.className = 'icon track-handle'; handle.innerHTML = icon('drag_handle'); row.prepend(handle); }
   return row;
+}
+// 曲の「…」メニュー。行でも再生画面でも同じ項目。
+function trackMenu(track, playlist) {
+  return [
+    { icon: 'playlist_play', label: 'Play next', run: () => { player.playNext(track); toast('Added to queue'); }, disabled: !playableNow(track) || player.track?.id === track.id },
+    { icon: 'playlist_add', label: 'Add to playlist', run: () => pickPlaylist([track.id]) },
+    { icon: 'info', label: 'Details', run: () => showDetails(track) },
+    playlist && { icon: 'remove', label: 'Remove', danger: true, run: () => removeFromPlaylist(playlist, track) },
+  ];
 }
 function showDetails(track) {
   $('detail-title').textContent = track.title;
@@ -236,8 +256,17 @@ function renderHome() {
   // ON = 全曲保存済み。途中の状態は OFF として見せ、次のタップで残りを保存する。
   $('save-all').checked = visible.length > 0 && !pending.length;
   $('save-all').disabled = downloading || !visible.length;
+  $('shuffle-all').disabled = !visible.length;
 }
 $('sort').onclick = () => { settings.sort = nextSort(settings.sort); persistSettings(); renderHome(); };
+// 一覧をシャッフル再生。開始曲も無作為に選ぶ。
+function shufflePlay(list) {
+  const candidates = list.filter(playableNow);
+  if (!candidates.length) { toast('Nothing to play'); return; }
+  player.setShuffle(true);
+  player.start(candidates, candidates[Math.floor(Math.random() * candidates.length)].id);
+}
+$('shuffle-all').onclick = () => shufflePlay(homeTracks());
 $('save-all').onchange = async () => {
   const visible = homeTracks();
   const pending = visible.filter(track => !saved.has(track.id));
@@ -286,7 +315,9 @@ function cardFor(playlist) {
   const card = document.createElement('button'); card.className = 'card-item'; card.dataset.id = playlist.id;
   card.innerHTML = icon('queue_music');
   const name = document.createElement('span'); name.className = 'card-name'; name.textContent = playlist.name;
-  const count = document.createElement('span'); count.className = 'card-count'; count.textContent = `${playlist.trackIds.length} tracks`;
+  const rows = PL.resolveTracks(playlist, trackByID, saved);
+  const count = document.createElement('span'); count.className = 'card-count';
+  count.textContent = `${playlist.trackIds.length} tracks${rows.length ? ` · ${durationLabel(rows.reduce((sum, track) => sum + (track.duration || 0), 0))}` : ''}`;
   card.append(name, count);
   card.onclick = () => { currentPlaylist = playlist.id; renderPlaylists(); $('fab-add').hidden = false; };
   return card;
@@ -301,6 +332,7 @@ function renderPlaylists() {
     $('playlist-title').textContent = playlist.name;
     const rows = PL.resolveTracks(playlist, trackByID, saved);
     $('playlist-empty').hidden = rows.length > 0;
+    $('playlist-play').disabled = $('playlist-shuffle').disabled = !rows.length;
     $('playlist-tracks').replaceChildren(...rows.map(track => makeRow(track, { list: rows, playlist })));
     return;
   }
@@ -322,13 +354,13 @@ makeSortable($('playlist-tracks'), { itemSelector: '.track', handleSelector: '.t
 } });
 $('playlist-back').onclick = () => { currentPlaylist = null; renderPlaylists(); };
 $('playlist-new').onclick = async () => { const n = await prompt('Playlist name'); if (n) { PL.createPlaylist(store, n); persistStore(); renderPlaylists(); } };
+const openPlaylistRows = () => { const playlist = store.playlists.find(p => p.id === currentPlaylist); return playlist ? PL.resolveTracks(playlist, trackByID, saved) : []; };
+$('playlist-play').onclick = () => { const c = openPlaylistRows().filter(playableNow); if (c.length) { player.setShuffle(false); player.start(c, c[0].id); } else toast('Nothing to play'); };
+$('playlist-shuffle').onclick = () => shufflePlay(openPlaylistRows());
 $('playlist-menu').onclick = () => {
   const playlist = store.playlists.find(p => p.id === currentPlaylist);
   if (!playlist) return;
-  const rows = PL.resolveTracks(playlist, trackByID, saved);
   popover.open($('playlist-menu'), [
-    { icon: 'play_arrow', label: 'Play all', disabled: !rows.length, run: () => { const c = rows.filter(playableNow); if (c.length) player.start(c, c[0].id); } },
-    { icon: 'shuffle', label: 'Shuffle', disabled: !rows.length, run: () => { const c = rows.filter(playableNow); if (c.length) { player.setShuffle(true); player.start(c, c[Math.floor(Math.random() * c.length)].id); } } },
     { icon: 'queue_music', label: 'Rename', run: async () => { const n = await prompt('Playlist name', playlist.name); if (n) { PL.rename(playlist, n); persistStore(); renderPlaylists(); } } },
     { icon: 'delete', label: 'Delete playlist', danger: true, run: async () => { if (await confirm(`Delete "${playlist.name}"? Saved audio stays on this device.`, { ok: 'Delete' })) { PL.removePlaylist(store, playlist.id); currentPlaylist = null; persistStore(); renderPlaylists(); } } },
   ]);
@@ -398,7 +430,7 @@ async function renderSettings() {
   const percent = est?.quota ? Math.min(100, Math.round(((est.usage || used) / est.quota) * 100)) : 0;
   $('gauge-fill').style.width = `${percent}%`;
   $('gauge').setAttribute('aria-valuenow', String(percent));
-  $('storage-line').textContent = `${saved.size} tracks · ${megabytes(used)}${est?.quota ? ` · ${percent}% of ${megabytes(est.quota)}` : ''}`;
+  $('storage-line').textContent = `${saved.size} tracks · ${bytesLabel(used)}${est?.quota ? ` · ${percent}% of ${bytesLabel(est.quota)}` : ''}`;
   const rows = [...savedList, ...orphanIDs.map(id => ({ id, folder: id.split('/')[0], title: id.split('/').pop().replace(/\.mp3$/i, ''), duration: 0, size: saved.get(id), gone: true }))];
   $('saved-list').replaceChildren(...rows.map(track => {
     const row = document.createElement('div'); row.className = `track${track.gone ? ' gone' : ''}`;
@@ -427,8 +459,11 @@ for (const card of document.querySelectorAll('#view-settings details')) card.add
 const authHeaders = () => ({ authorization: `Bearer ${settings.password}` });
 async function verifyPassword() {
   if (!settings.password) { adminOK = false; return; }
-  try { const r = await fetch('/api/auth', { method: 'POST', headers: authHeaders() }); adminOK = r.ok; if (!r.ok && r.status === 401) toast('Wrong password'); }
-  catch { adminOK = false; }
+  try {
+    const r = await fetch('/api/auth', { method: 'POST', headers: authHeaders() }); adminOK = r.ok;
+    // 変更された古いパスワードは捨てる。起動のたびに警告しない。
+    if (r.status === 401) { settings.password = ''; persistSettings(); toast('Wrong password'); }
+  } catch { adminOK = false; }
   if (openView === 'settings') renderSettings();
 }
 $('password-form').onsubmit = async event => {
@@ -438,7 +473,7 @@ $('password-form').onsubmit = async event => {
   if (adminOK) toast('Unlocked');
 };
 function renderAdmin() {
-  $('cloud-line').textContent = cloud.limit ? `Cloud ${megabytes(cloud.used)} / ${megabytes(cloud.limit)}` : `Cloud ${megabytes(cloud.used)}`;
+  $('cloud-line').textContent = cloud.limit ? `Cloud ${bytesLabel(cloud.used)} / ${bytesLabel(cloud.limit)}` : `Cloud ${bytesLabel(cloud.used)}`;
   $('folders').replaceChildren(...[...new Set(tracks.map(t => t.folder))].sort().map(name => { const o = document.createElement('option'); o.value = name; return o; }));
   const list = arrange(tracks.filter(t => !t.gone), 'new');
   $('admin-tracks').replaceChildren(...list.map(track => {

@@ -20,13 +20,16 @@ export async function saveTrack(track, signal, progress = () => {}) {
   const cache = await caches.open(AUDIO_CACHE);
   const url = mediaURL(track);
   if (await cache.match(url)) { await saveCover(track, signal); return; }
+  // 利用者の中止と無通信タイムアウトのどちらでも止める。AbortSignal.any は iOS 17.4 以降なので使わない。
   const stalled = new AbortController();
+  const stop = () => stalled.abort(signal.reason);
+  signal.addEventListener('abort', stop, { once: true });
   let timer;
   const touch = () => { clearTimeout(timer); timer = setTimeout(() => stalled.abort(), 30000); };
   touch();
   try {
     // ?download=1 で Service Worker を素通りさせ、部分応答が混ざらないようにする。
-    const response = await fetch(`${url}?download=1`, { signal: AbortSignal.any([signal, stalled.signal]), cache: 'no-store' });
+    const response = await fetch(`${url}?download=1`, { signal: stalled.signal, cache: 'no-store' });
     if (response.status === 404) throw new Error('Track is no longer available');
     if (response.status !== 200) throw new Error(`Download failed (${response.status})`);
     if (Number(response.headers.get('content-length')) !== track.size) throw new Error('Size mismatch');
@@ -47,5 +50,5 @@ export async function saveTrack(track, signal, progress = () => {}) {
     if (stalled.signal.aborted) throw new Error('Connection stalled');
     if (error instanceof TypeError) throw new Error('Connection lost');
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); signal.removeEventListener('abort', stop); }
 }

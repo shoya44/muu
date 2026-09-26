@@ -35,7 +35,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 - 楽曲 ID = オブジェクト key。URL エンコードしてパスに載せる。
 - Worker の一覧 API は `list()` を prefix なしで回し（1000 件 / 回、continuation）、`.mp3` だけを曲、`cover.jpg` をフォルダカバーとして組み立てる。customMetadata が欠ける曲、size 0 の曲は除外。
-- 一覧は Worker 側で 60 秒程度 Cache API に置く。ETag は一覧 JSON のハッシュ。PWA は `If-None-Match` で差分有無だけ確認する。
+- 一覧は Worker 側で 30 秒 Cache API に置く。ETag は一覧 JSON のハッシュ。PWA は `If-None-Match` で差分有無だけ確認する。
 
 ## 4. API
 
@@ -48,7 +48,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | PUT /api/covers/:folder | パスワード | cover.jpg のアップロード。上書き可 |
 | DELETE /api/tracks/:id | パスワード | 削除。存在しなくても 204 |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
-| GET /version.json | なし | `{ version }`。Worker が返す |
+| GET /version.json | なし | `{ version, built }`。Worker が返す |
 
 - パスワードは `Authorization: Bearer <password>` で受け、Worker Secret `ADMIN_PASSWORD` と定数時間比較。
 - 書き込み API は加えて `Sec-Fetch-Site` が `same-origin` であることを要求する。
@@ -56,25 +56,27 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 ## 5. PWA 内部
 
-- `library.mjs`：一覧の取得、IndexedDB への前回一覧保存、ソート、Home 表示。
-- `player.mjs`：`<audio>` 1 個、キュー、シャッフル、Media Session、前回状態の復元。otoport の player / queue をほぼ流用。
-- `storage.mjs`：Cache Storage の音声・カバー保存、索引、使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。
-- `playlists.mjs`：IndexedDB の `playlists`（id, name, trackIds[]。配列順が表示順）。曲参照は R2 key。一覧に無い key はグレー表示。
-- `settings.mjs`：設定 UI、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT）、更新確認。
+- `app.mjs`：画面全部（Home、Playlists、Settings、再生画面、ダイアログ）、一覧の同期、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT）、更新確認。
+- `library.mjs`：ソート、表示用の整形（時間・容量のラベル）、一覧のマージ。純粋関数のみでテスト対象。
+- `player.mjs`：`<audio>` 1 個、キュー、シャッフル、リピート（全曲）、Media Session、前回状態の復元。
+- `storage.mjs`：IndexedDB 1 ストア（`state`）の読み書きと、Cache Storage の音声索引・使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。
+- `downloads.mjs`：音声とカバーの保存。完全に受信できたときだけ Cache に入れる。
+- `playlists.mjs`：My Playlist のデータ（id, name, trackIds[]。配列順が表示順）。曲参照は R2 key。一覧に無い key はグレー表示。
+- `sheet.mjs` / `popover.mjs` / `drag.mjs`：再生画面のスワイプ、アンカー付きメニュー、長押しドラッグの並べ替え。
 - `sw.mjs`：アプリ本体は precache、`/media/*` は Cache Storage 優先・無ければネットワーク、`/api/*` はネットワークのみ。更新時に音声キャッシュへ触らない。
-- 状態管理はモジュール変数＋`CustomEvent`。フレームワークなし。
+- 状態管理はモジュール変数と再描画関数。フレームワークなし。
 
 ## 6. 端末内データ
 
 | 保管先 | 内容 |
 | --- | --- |
-| IndexedDB `library` | 前回一覧 JSON と etag |
-| IndexedDB `saved` | 保存済み key、サイズ、保存日時 |
-| IndexedDB `playlists` | My Playlist |
-| IndexedDB `state` | 現在曲、位置、キュー、シャッフル、設定、パスワード |
-| Cache `muu-app-v<ver>` | アプリ本体 |
-| Cache `muu-media` | 音声。key = `/media/<id>` |
-| Cache `muu-covers` | カバー |
+| IndexedDB `muu` / ストア `state` / キー `library` | 前回一覧 JSON と etag |
+| 同 キー `playlists` | My Playlist |
+| 同 キー `player` | 現在曲、位置、キュー、シャッフル、リピート |
+| 同 キー `settings` | ソート、自動保存、復元、パスワード、設定カードの開閉 |
+| Cache `muu-shell-<ver>` | アプリ本体。新版が有効になると旧版だけ捨てる |
+| Cache `muu-media-v1` | 音声。key = `/media/<id>`。保存済みの索引はこの Cache の key から都度作る（別の索引は持たない） |
+| Cache `muu-covers-v1` | カバー |
 
 ## 7. テーマ
 

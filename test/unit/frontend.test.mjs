@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
-const t = (id, title, uploadedAt) => ({ id, title, uploadedAt, folder: 'f', duration: 10, size: 1, cover: false });
+const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
 
 test('sort cycles and orders', () => {
-  assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'new');
+  assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'folder'); assert.equal(nextSort('folder'), 'new');
   const list = [t('a', 'Banana', '2'), t('b', 'apple', '3'), t('c', 'Cherry', '1')];
   assert.deepEqual(arrange(list, 'new').map(x => x.id), ['b', 'a', 'c']);
   assert.deepEqual(arrange(list, 'old').map(x => x.id), ['c', 'a', 'b']);
   assert.deepEqual(arrange(list, 'az').map(x => x.id), ['b', 'a', 'c']);
   assert.deepEqual(arrange(list, 'za').map(x => x.id), ['c', 'a', 'b']);
+  const folders = [t('a', 'B', '1', 'Zed'), t('b', 'A', '1', 'Zed'), t('c', 'C', '1', 'alpha')];
+  assert.deepEqual(arrange(folders, 'folder').map(x => x.id), ['c', 'b', 'a']);
 });
 
 test('merge keeps saved tracks that left the cloud, drops unsaved ones', () => {
@@ -35,11 +37,19 @@ test('file names', () => {
   assert.equal(time(125), '2:05');
 });
 
+test('labels for sizes and total durations', () => {
+  assert.equal(bytesLabel(500 * 1024 * 1024), '500.0 MB');
+  assert.equal(bytesLabel(9663676416), '9.0 GB');
+  assert.equal(durationLabel(20), '< 1 min');
+  assert.equal(durationLabel(59 * 60 + 20), '59 min');
+  assert.equal(durationLabel(3900), '1h 05m');
+});
+
 test('playlists: order, resolve, normalise', () => {
   const store = PL.emptyStore();
   const p1 = PL.createPlaylist(store, 'One'); const p2 = PL.createPlaylist(store, 'Two');
   assert.equal(PL.addTracks(p1, ['x/1.mp3', 'x/2.mp3', 'x/1.mp3']), 2);
-  PL.moveTrack(p1, 0, 1);
+  PL.removeTrack(p1, 'x/1.mp3'); PL.addTracks(p1, ['x/1.mp3']);
   assert.deepEqual(p1.trackIds, ['x/2.mp3', 'x/1.mp3']);
   PL.reorder(store, [p2.id, p1.id]);
   assert.deepEqual(store.playlists.map(p => p.id), [p2.id, p1.id]);

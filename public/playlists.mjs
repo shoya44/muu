@@ -27,11 +27,6 @@ export function addTracks(playlist, ids) {
   return added;
 }
 export function removeTrack(playlist, id) { playlist.trackIds = playlist.trackIds.filter(t => t !== id); }
-export function moveTrack(playlist, from, to) {
-  if (from === to || !playlist.trackIds[from] || to < 0 || to >= playlist.trackIds.length) return;
-  const [moved] = playlist.trackIds.splice(from, 1);
-  playlist.trackIds.splice(to, 0, moved);
-}
 // カードの並べ替え。表示中の ID の並びを正とする。
 export function reorder(store, orderedIDs) {
   const byID = new Map(store.playlists.map(p => [p.id, p]));
@@ -44,7 +39,7 @@ export function resolveTracks(playlist, lookup, savedIDs) {
   for (const id of playlist.trackIds) {
     const track = lookup(id);
     if (track) rows.push(track);
-    else if (savedIDs.has(id)) rows.push({ id, folder: id.split('/')[0] || '', title: id.split('/').pop().replace(/\.mp3$/i, ''), duration: 0, size: savedIDs.get?.(id) || 0, cover: false, gone: true, orphan: true });
+    else if (savedIDs.has(id)) rows.push({ id, folder: id.split('/')[0] || '', title: id.split('/').pop().replace(/\.mp3$/i, ''), duration: 0, size: savedIDs.get?.(id) || 0, cover: false, gone: true });
   }
   return rows;
 }
