@@ -73,6 +73,12 @@ test('playlist survives reload', async ({ page }) => {
   await page.locator('#chooser-list input').first().check();
   await page.locator('#chooser-ok').click();
   await expect(page.locator('#playlist-tracks .track')).toHaveCount(1);
+  // IndexedDB への書き込み完了を待ってから再読み込みする。
+  await page.waitForFunction(async () => {
+    const db = await new Promise(r => { const q = indexedDB.open('muu'); q.onsuccess = () => r(q.result); });
+    const store = await new Promise(r => { const q = db.transaction('state').objectStore('state').get('playlists'); q.onsuccess = () => r(q.result); });
+    return store?.playlists?.some(p => p.trackIds.length === 1);
+  });
   await page.reload();
   await page.getByRole('button', { name: 'Playlists' }).click();
   await expect(page.getByRole('button', { name: /Road/ })).toContainText('1 tracks');
