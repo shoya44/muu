@@ -83,3 +83,22 @@ test('playlist survives reload', async ({ page }) => {
   await page.getByRole('button', { name: 'Playlists' }).click();
   await expect(page.getByRole('button', { name: /Road/ })).toContainText('1 tracks');
 });
+
+test('service worker update activates on request', async ({ page }) => {
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.getRegistration().then(r => Boolean(r?.active)))).toBe(true);
+  // 新しい版を装った SW を待機させ、切り替え要求で制御が移ることを確かめる。
+  const swapped = await page.evaluate(async () => {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const before = navigator.serviceWorker.controller?.scriptURL;
+    const changed = new Promise(resolve => navigator.serviceWorker.addEventListener('controllerchange', () => resolve(true), { once: true }));
+    // 同じスクリプトでは更新にならないため、クエリ違いで登録して新しい worker を作る。
+    const next = await navigator.serviceWorker.register('/sw.mjs?v=test', { type: 'module' });
+    const worker = next.installing || next.waiting;
+    await new Promise(resolve => { if (!worker || worker.state === 'installed') resolve(); else worker.addEventListener('statechange', () => worker.state === 'installed' && resolve()); });
+    (next.waiting || worker).postMessage('activate-update');
+    await Promise.race([changed, new Promise(r => setTimeout(() => r(false), 5000))]);
+    return navigator.serviceWorker.controller?.scriptURL !== before;
+  });
+  expect(swapped).toBe(true);
+});

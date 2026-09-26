@@ -517,16 +517,37 @@ async function checkUpdate(manual = false) {
     } else if (manual) toast('Up to date');
   } catch { if (manual) toast('Offline'); }
 }
+// 新しい Service Worker がインストールを終えるのを待ってから切り替え、制御が移ったら読み込み直す。
+// 途中で待たされないよう、一定時間で必ず読み込み直す。
+let updating = false;
+function activate(worker) {
+  if (!worker) return false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+  const tell = () => worker.postMessage('activate-update');
+  if (worker.state === 'installed') tell();
+  else worker.addEventListener('statechange', () => { if (worker.state === 'installed') tell(); if (worker.state === 'activated') location.reload(); });
+  return true;
+}
 async function applyUpdate() {
+  if (updating) return;
+  updating = true;
+  toast('Updating…');
+  const fallback = setTimeout(() => location.reload(), 8000);
   try {
-    await registration?.update();
-    const waiting = registration?.waiting || registration?.installing;
-    if (waiting) {
-      waiting.postMessage('activate-update');
-      navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
-      setTimeout(() => location.reload(), 3000);
-    } else location.reload();
-  } catch { location.reload(); }
+    if (!registration) { location.reload(); return; }
+    await registration.update();
+    if (!activate(registration.waiting || registration.installing)) {
+      // 既に新しい版が動いているか、取得できなかった。読み込み直して確かめる。
+      clearTimeout(fallback); location.reload();
+    }
+  } catch { clearTimeout(fallback); location.reload(); }
+}
+// 起動時に待機中の新版があれば、再生前なので黙って切り替える。
+function adoptWaiting(reg) {
+  if (reg.waiting && !sessionStorage.getItem('muu-adopted')) {
+    sessionStorage.setItem('muu-adopted', '1');
+    activate(reg.waiting);
+  } else sessionStorage.removeItem('muu-adopted');
 }
 
 // ---- 起動 ----
@@ -541,7 +562,7 @@ async function start() {
   if (settings.resume && playerState) player.restore(playerState);
   renderPlayer();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.mjs', { type: 'module' }).then(r => { registration = r; }).catch(() => {});
+    navigator.serviceWorker.register('/sw.mjs', { type: 'module', updateViaCache: 'none' }).then(r => { registration = r; adoptWaiting(r); }).catch(() => {});
   }
   await refresh(true);
   $('loading').hidden = true;
