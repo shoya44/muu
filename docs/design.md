@@ -56,7 +56,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 ## 5. PWA 内部
 
-- `app.mjs`：画面全部（Home、Playlists、Settings、再生画面、ダイアログ）、一覧の同期、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT）、更新確認。
+- `app.mjs`：画面全部（Home、Playlists、Settings、再生画面、ダイアログ）、一覧の同期、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT。フォルダのドロップ / 選択は `groupUploads` でフォルダごとにまとめて順に送る）、更新確認。
 - `library.mjs`：ソート、表示用の整形（時間・容量のラベル）、一覧のマージ。純粋関数のみでテスト対象。
 - `player.mjs`：`<audio>` 1 個、キュー、シャッフル、リピート（全曲）、Media Session、前回状態の復元。
 - `storage.mjs`：IndexedDB 1 ストア（`state`）の読み書きと、Cache Storage の音声索引・使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。

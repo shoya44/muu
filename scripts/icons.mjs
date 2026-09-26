@@ -7,7 +7,7 @@ const NAMES = [
   'library_music', 'settings', 'arrow_back', 'queue_music', 'repeat',
   'play_arrow', 'pause', 'skip_next', 'skip_previous', 'shuffle',
   'more_horiz', 'download', 'download_done', 'progress_activity',
-  'sort', 'add', 'delete', 'close', 'keyboard_arrow_down',
+  'sort', 'folder', 'add', 'delete', 'close', 'keyboard_arrow_down',
   'drag_handle', 'playlist_add', 'playlist_play', 'info', 'upload',
   'refresh', 'remove', 'music_note', 'key', 'check', 'cloud_off', 'check_circle', 'radio_button_unchecked',
 ];

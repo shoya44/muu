@@ -5,7 +5,7 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -500,31 +500,79 @@ function durationOf(file) {
     audio.src = url;
   });
 }
-$('upload-files').onchange = async () => {
-  const folder = $('upload-folder').value.trim();
-  const files = [...$('upload-files').files]; $('upload-files').value = '';
-  if (!folder) { toast('Enter a folder name'); return; }
-  let done = 0;
-  for (const file of files) {
-    $('upload-status').textContent = `${done + 1} / ${files.length} · ${file.name}`;
-    const duration = await durationOf(file);
-    if (!duration) { toast(`Can't read ${file.name}`); continue; }
-    const key = `${folder}/${safeFileName(file.name)}`;
-    const r = await fetch(`/api/tracks/${encodeURIComponent(key)}`, { method: 'PUT', body: file, headers: { ...authHeaders(), 'content-type': 'audio/mpeg', 'x-title': encodeURIComponent(titleOf(file.name)), 'x-duration': String(duration) } });
-    if (r.status === 201) done++;
-    else if (r.status === 409) toast(`Exists: ${file.name}`);
-    else if (r.status === 507) { toast('Cloud storage is full'); break; }
-    else toast(`Upload failed (${r.status})`);
+async function putCover(folder, file) {
+  const r = await fetch(`/api/covers/${encodeURIComponent(folder)}`, { method: 'PUT', body: file, headers: { ...authHeaders(), 'content-type': 'image/jpeg' } });
+  if (r.status === 201) await (await caches.open(COVER_CACHE)).delete(`/covers/${encodeURIComponent(folder)}`);
+  return r.status;
+}
+// まとめてアップロード。jobs = [{ folder, files, cover }]。1 つずつ順に送り、既存は飛ばし、満杯なら止める。
+let uploading = false;
+async function uploadJobs(jobs) {
+  if (uploading) { toast('Upload in progress'); return; }
+  uploading = true;
+  const total = jobs.reduce((sum, job) => sum + job.files.length, 0);
+  let done = 0, exists = 0, failed = 0, index = 0;
+  try {
+    for (const { folder, files, cover } of jobs) {
+      if (cover && (await putCover(folder, cover)) !== 201) failed++;
+      for (const file of files) {
+        $('upload-status').textContent = `${++index} / ${total} · ${folder} / ${file.name}`;
+        const duration = await durationOf(file);
+        if (!duration) { failed++; toast(`Can't read ${file.name}`); continue; }
+        const key = `${folder}/${safeFileName(file.name)}`;
+        const r = await fetch(`/api/tracks/${encodeURIComponent(key)}`, { method: 'PUT', body: file, headers: { ...authHeaders(), 'content-type': 'audio/mpeg', 'x-title': encodeURIComponent(titleOf(file.name)), 'x-duration': String(duration) } });
+        if (r.status === 201) done++;
+        else if (r.status === 409) exists++;
+        else if (r.status === 507) { toast('Cloud storage is full'); return; }
+        else { failed++; toast(`Upload failed (${r.status}): ${file.name}`); }
+      }
+    }
+  } finally {
+    uploading = false; $('upload-status').textContent = '';
+    const parts = [done && `Uploaded ${done}`, exists && `${exists} already there`, failed && `${failed} failed`].filter(Boolean);
+    if (parts.length) toast(parts.join(' · '));
+    if (done || jobs.some(job => job.cover)) await refresh(true);
   }
-  $('upload-status').textContent = '';
-  if (done) { toast(`Uploaded ${done}`); await refresh(true); }
+}
+// ファイル選択（フォルダ名は入力欄）。
+$('upload-files').onchange = () => {
+  const folder = $('upload-folder').value.trim();
+  const files = [...$('upload-files').files].filter(file => isMP3(file.name)); $('upload-files').value = '';
+  if (!folder) { toast('Enter a folder name'); return; }
+  if (files.length) uploadJobs([{ folder, files }]);
 };
 $('upload-cover').onchange = async () => {
   const folder = $('upload-folder').value.trim(); const file = $('upload-cover').files[0]; $('upload-cover').value = '';
   if (!folder || !file) { toast('Enter a folder name'); return; }
-  const r = await fetch(`/api/covers/${encodeURIComponent(folder)}`, { method: 'PUT', body: file, headers: { ...authHeaders(), 'content-type': 'image/jpeg' } });
-  if (r.status === 201) { await (await caches.open(COVER_CACHE)).delete(`/covers/${encodeURIComponent(folder)}`); toast('Cover updated'); await refresh(true); } else toast(`Upload failed (${r.status})`);
+  const status = await putCover(folder, file);
+  if (status === 201) { toast('Cover updated'); await refresh(true); } else toast(`Upload failed (${status})`);
 };
+// フォルダ選択とドロップ。直下のフォルダ名を R2 のフォルダにする。フォルダ直下でないファイルは入力欄のフォルダへ。
+const groupByFolder = entries => groupUploads(entries, $('upload-folder').value.trim());
+$('upload-dir').onchange = () => {
+  const entries = [...$('upload-dir').files].map(file => ({ file, path: file.webkitRelativePath || file.name })); $('upload-dir').value = '';
+  const jobs = groupByFolder(entries);
+  if (jobs.length) uploadJobs(jobs); else toast('No MP3 found');
+};
+async function readDropped(items) {
+  const entries = [];
+  async function walk(entry, prefix) {
+    if (entry.isFile) { const file = await new Promise((ok, no) => entry.file(ok, no)); entries.push({ file, path: prefix + file.name }); return; }
+    if (!entry.isDirectory) return;
+    const reader = entry.createReader();
+    // readEntries は一度に全部返さない。空になるまで繰り返す。
+    for (;;) { const batch = await new Promise((ok, no) => reader.readEntries(ok, no)); if (!batch.length) break; for (const child of batch) await walk(child, `${prefix}${entry.name}/`); }
+  }
+  for (const item of items) { const entry = item.webkitGetAsEntry?.(); if (entry) await walk(entry, ''); }
+  return entries;
+}
+for (const type of ['dragenter', 'dragover']) $('admin').addEventListener(type, e => { e.preventDefault(); $('admin').classList.add('over'); });
+$('admin').addEventListener('dragleave', () => $('admin').classList.remove('over'));
+$('admin').addEventListener('drop', async e => {
+  e.preventDefault(); $('admin').classList.remove('over');
+  const jobs = groupByFolder(await readDropped([...e.dataTransfer.items]));
+  if (jobs.length) uploadJobs(jobs); else toast($('upload-folder').value.trim() ? 'No MP3 found' : 'Drop a folder, or enter a folder name');
+});
 
 // ---- 同期・更新 ----
 let refreshing;

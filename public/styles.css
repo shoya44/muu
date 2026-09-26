@@ -112,6 +112,9 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 .saved-list .track { min-height: 48px; }
 .admin { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 #upload-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.drop-hint { display: none; }
+@media (hover: hover) and (pointer: fine) { .drop-hint { display: block; } }
+.admin.over { outline: 2px dashed var(--md-sys-color-tertiary); outline-offset: 6px; border-radius: var(--md-sys-shape-corner-small); }
 #upload-form input { flex: 1 1 120px; min-width: 0; background: var(--md-sys-color-surface-container-high); border: 0; border-radius: var(--md-sys-shape-corner-small); color: inherit; min-height: 44px; padding: 0 12px; }
 .file-button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: var(--md-sys-shape-corner-small); border: 1px solid var(--md-sys-color-outline-variant); cursor: pointer; font-size: var(--md-sys-typescale-label-large-size); }
 .file-button .material-icon { width: 20px; height: 20px; }

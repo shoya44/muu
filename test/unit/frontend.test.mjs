@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
@@ -57,4 +57,15 @@ test('playlists: order, resolve, normalise', () => {
   assert.deepEqual(rows.map(r => [r.id, Boolean(r.gone)]), [['x/2.mp3', true], ['x/1.mp3', false]]);
   const clean = PL.normalise({ folders: [{ id: 'z' }], playlists: [{ id: 'q', name: 'Q', folder: 'missing', trackIds: ['a', 'a', 3] }] });
   assert.deepEqual(clean, { playlists: [{ id: 'q', name: 'Q', trackIds: ['a'] }] });
+});
+
+test('bulk upload groups files by their parent folder', () => {
+  const f = name => ({ name });
+  const jobs = groupUploads([
+    { file: f('a.mp3'), path: 'Summer/a.mp3' }, { file: f('cover.jpg'), path: 'Summer/cover.jpg' },
+    { file: f('b.MP3'), path: 'Music/Winter/b.MP3' }, { file: f('notes.txt'), path: 'Winter/notes.txt' },
+    { file: f('loose.mp3'), path: 'loose.mp3' }, { file: f('x.jpg'), path: 'Empty/x.jpg' },
+  ], 'Inbox');
+  assert.deepEqual(jobs.map(j => [j.folder, j.files.map(x => x.name), j.cover?.name]), [['Summer', ['a.mp3'], 'cover.jpg'], ['Winter', ['b.MP3'], undefined], ['Inbox', ['loose.mp3'], undefined]]);
+  assert.deepEqual(groupUploads([{ file: f('loose.mp3'), path: 'loose.mp3' }], ''), []);
 });

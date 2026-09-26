@@ -98,7 +98,10 @@
           <datalist id="folders"></datalist>
           <label class="file-button"><span data-icon="upload"></span><span>MP3</span><input id="upload-files" type="file" accept="audio/mpeg,.mp3" multiple hidden></label>
           <label class="file-button"><span data-icon="upload"></span><span>Cover</span><input id="upload-cover" type="file" accept="image/jpeg" hidden></label>
+          <label class="file-button"><span data-icon="folder"></span><span>Folders</span><input id="upload-dir" type="file" webkitdirectory multiple hidden></label>
         </form>
+        <!-- PC ではフォルダごとここへドロップできる。フォルダ名がそのまま R2 のフォルダになる。 -->
+        <p id="drop-hint" class="muted drop-hint">Drop folders here: each folder becomes an album, cover.jpg included.</p>
         <p id="upload-status" class="status"></p>
         <p id="cloud-line" class="muted"></p>
         <div id="admin-tracks" class="saved-list"></div>

@@ -51,3 +51,19 @@ export function safeFileName(name) {
   return `${base.slice(0, 150)}.mp3`;
 }
 export const titleOf = fileName => String(fileName).replace(/\.[^.]*$/, '').trim() || 'Untitled';
+
+// まとめてアップロードする入力を、フォルダごとの仕事に分ける。
+// entries = [{ file, path }]。path の親ディレクトリ名がフォルダ。親が無ければ fallback（入力欄）。cover.jpg はそのフォルダのカバー。
+export const isMP3 = name => /\.mp3$/i.test(name);
+export function groupUploads(entries, fallback = '') {
+  const jobs = new Map();
+  const jobFor = folder => { if (!jobs.has(folder)) jobs.set(folder, { folder, files: [], cover: undefined }); return jobs.get(folder); };
+  for (const { file, path } of entries) {
+    const parts = String(path).split('/').filter(Boolean);
+    const folder = parts.length > 1 ? parts[parts.length - 2] : fallback;
+    if (!folder) continue;
+    if (isMP3(file.name)) jobFor(folder).files.push(file);
+    else if (/^cover\.jpe?g$/i.test(file.name)) jobFor(folder).cover = file;
+  }
+  return [...jobs.values()].filter(job => job.files.length || job.cover);
+}
