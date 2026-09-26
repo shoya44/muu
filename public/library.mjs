@@ -44,6 +44,17 @@ export function mergeLibrary(remote, previous, savedIDs) {
   return [...remote.map(track => ({ ...track, gone: false })), ...kept];
 }
 
+// フォルダごとに区切る。入力の並びを保ち、同じフォルダの曲が続く前提（sort = 'folder'）。
+export function groupByFolder(tracks) {
+  const groups = [];
+  for (const track of tracks) {
+    const last = groups[groups.length - 1];
+    if (last && last.folder === track.folder) last.tracks.push(track);
+    else groups.push({ folder: track.folder, tracks: [track] });
+  }
+  return groups;
+}
+
 // アップロードするファイル名を key に使える形へ。
 export function safeFileName(name) {
   let base = String(name).replace(/\.[^.]*$/, '').replace(/[\u0000-\u001f\u007f/\\]/g, '').trim();

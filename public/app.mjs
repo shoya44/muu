@@ -5,13 +5,13 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
 const $ = id => document.getElementById(id);
 let tracks = [], saved = new Map(), store = PL.emptyStore();
-let settings = { sort: 'new', autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false } };
+let settings = { sort: 'new', autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false }, collapsed: [] };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '', cloud = { used: 0, limit: 0 };
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
 let activeKey, queueShape, selecting = null;
@@ -168,7 +168,7 @@ function renderQueue() {
 makeSortable($('queue'), { itemSelector: 'li', handleSelector: '.track-handle', onMove: (from, to) => { player.moveItem(from, to); renderQueue(); } });
 
 // ---- 楽曲の行 ----
-function makeRow(track, { list, playlist, select } = {}) {
+function makeRow(track, { list, playlist, select, grouped } = {}) {
   const row = document.createElement('div');
   row.className = `track${player.track?.id === track.id ? ' active' : ''}${track.gone ? ' gone' : ''}${select?.has(track.id) ? ' selected' : ''}`;
   row.dataset.id = track.id; row.setAttribute('role', 'listitem');
@@ -176,7 +176,8 @@ function makeRow(track, { list, playlist, select } = {}) {
   const info = document.createElement('span'); info.className = 'track-info';
   const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
   const meta = document.createElement('span'); meta.className = 'track-meta';
-  meta.textContent = `${track.duration ? time(track.duration) : '--:--'} · ${track.folder}`;
+  // フォルダ見出しの下ではフォルダ名を繰り返さない。
+  meta.textContent = `${track.duration ? time(track.duration) : '--:--'}${grouped ? '' : ` · ${track.folder}`}`;
   info.append(title, meta); play.append(info);
   play.onclick = () => {
     if (select) { toggleSelect(track.id); return; }
@@ -251,12 +252,37 @@ function renderHome() {
   $('home-empty').hidden = visible.length > 0;
   $('select-bar').hidden = !selecting; $('home-bar').hidden = Boolean(selecting);
   if (selecting) { $('select-count').textContent = `${selecting.size} selected`; $('select-add').disabled = !selecting.size; }
-  $('tracks').replaceChildren(...visible.map(track => makeRow(track, { list: visible, select: selecting })));
+  // Folder ソートのときだけ見出しで区切る。折りたたんだフォルダは行を出さないが、キュー・一括保存の対象には残る。
+  const rows = settings.sort === 'folder'
+    ? groupByFolder(visible).flatMap(group => {
+      const open = !settings.collapsed.includes(group.folder);
+      return [folderHead(group, open), ...(open ? group.tracks.map(track => makeRow(track, { list: visible, select: selecting, grouped: true })) : [])];
+    })
+    : visible.map(track => makeRow(track, { list: visible, select: selecting }));
+  $('tracks').replaceChildren(...rows);
   const pending = visible.filter(track => !saved.has(track.id));
   // ON = 全曲保存済み。途中の状態は OFF として見せ、次のタップで残りを保存する。
   $('save-all').checked = visible.length > 0 && !pending.length;
   $('save-all').disabled = downloading || !visible.length;
   $('shuffle-all').disabled = !visible.length;
+}
+// フォルダ見出し。タップで折りたたみ、右端でそのフォルダを再生。
+function folderHead({ folder, tracks: members }, open) {
+  const head = document.createElement('div'); head.className = `folder-head${open ? ' open' : ''}`;
+  const toggle = document.createElement('button'); toggle.className = 'folder-toggle';
+  toggle.setAttribute('aria-expanded', String(open)); toggle.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} ${folder}`);
+  const chevron = document.createElement('span'); chevron.className = 'icon chevron'; chevron.innerHTML = icon('keyboard_arrow_down');
+  const name = document.createElement('span'); name.className = 'folder-name'; name.textContent = folder;
+  const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${members.length} · ${durationLabel(members.reduce((sum, track) => sum + (track.duration || 0), 0))}`;
+  toggle.append(chevron, name, count);
+  toggle.onclick = () => {
+    settings.collapsed = open ? [...settings.collapsed, folder] : settings.collapsed.filter(name => name !== folder);
+    persistSettings(); renderHome();
+  };
+  const play = document.createElement('button'); play.className = 'icon'; play.innerHTML = icon('play_arrow'); play.setAttribute('aria-label', `Play ${folder}`);
+  play.onclick = () => { const c = members.filter(playableNow); if (c.length) { player.setShuffle(false); player.start(c, c[0].id); } else toast('Nothing to play'); };
+  head.append(toggle, play);
+  return head;
 }
 $('sort').onclick = () => { settings.sort = nextSort(settings.sort); persistSettings(); renderHome(); };
 // 一覧をシャッフル再生。開始曲も無作為に選ぶ。
@@ -475,20 +501,33 @@ $('password-form').onsubmit = async event => {
 function renderAdmin() {
   $('cloud-line').textContent = cloud.limit ? `Cloud ${bytesLabel(cloud.used)} / ${bytesLabel(cloud.limit)}` : `Cloud ${bytesLabel(cloud.used)}`;
   $('folders').replaceChildren(...[...new Set(tracks.map(t => t.folder))].sort().map(name => { const o = document.createElement('option'); o.value = name; return o; }));
-  const list = arrange(tracks.filter(t => !t.gone), 'new');
-  $('admin-tracks').replaceChildren(...list.map(track => {
-    const row = document.createElement('div'); row.className = 'track';
-    const info = document.createElement('span'); info.className = 'track-info'; info.style.padding = '0 12px';
-    const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
-    const meta = document.createElement('span'); meta.className = 'track-meta'; meta.textContent = `${track.folder} · ${megabytes(track.size)}`;
-    info.append(title, meta);
-    const remove = document.createElement('button'); remove.className = 'icon'; remove.innerHTML = icon('delete'); remove.setAttribute('aria-label', `Delete ${track.title} from cloud`);
-    remove.onclick = async () => {
-      if (!(await confirm(`Delete "${track.title}" from the cloud for everyone?`, { ok: 'Delete' }))) return;
-      const r = await fetch(`/api/tracks/${encodeURIComponent(track.id)}`, { method: 'DELETE', headers: authHeaders() });
-      if (r.status === 204) { toast('Deleted'); await refresh(true); } else toast(`Delete failed (${r.status})`);
-    };
-    row.append(info, remove); return row;
+  // R2 と同じ構造で、フォルダごとに折りたたむ。開閉は再描画をまたいで保つ。
+  const wasOpen = new Set([...$('admin-tracks').querySelectorAll('details[open]')].map(el => el.dataset.folder));
+  const groups = groupByFolder(arrange(tracks.filter(t => !t.gone), 'folder'));
+  $('admin-tracks').replaceChildren(...groups.map(({ folder, tracks: members }) => {
+    const details = document.createElement('details'); details.className = 'folder'; details.dataset.folder = folder; details.open = wasOpen.has(folder);
+    const summary = document.createElement('summary');
+    const chevron = document.createElement('span'); chevron.className = 'icon chevron'; chevron.innerHTML = icon('keyboard_arrow_down');
+    const name = document.createElement('span'); name.className = 'folder-name'; name.textContent = folder;
+    const count = document.createElement('span'); count.className = 'track-meta'; count.textContent = `${members.length} · ${megabytes(members.reduce((sum, track) => sum + track.size, 0))}`;
+    summary.append(chevron, name, count);
+    const list = document.createElement('div'); list.className = 'saved-list';
+    list.append(...members.map(track => {
+      const row = document.createElement('div'); row.className = 'track';
+      const info = document.createElement('span'); info.className = 'track-info'; info.style.padding = '0 12px';
+      const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
+      const meta = document.createElement('span'); meta.className = 'track-meta'; meta.textContent = `${time(track.duration)} · ${megabytes(track.size)}`;
+      info.append(title, meta);
+      const remove = document.createElement('button'); remove.className = 'icon'; remove.innerHTML = icon('delete'); remove.setAttribute('aria-label', `Delete ${track.title} from cloud`);
+      remove.onclick = async () => {
+        if (!(await confirm(`Delete "${track.title}" from the cloud for everyone?`, { ok: 'Delete' }))) return;
+        const r = await fetch(`/api/tracks/${encodeURIComponent(track.id)}`, { method: 'DELETE', headers: authHeaders() });
+        if (r.status === 204) { toast('Deleted'); await refresh(true); } else toast(`Delete failed (${r.status})`);
+      };
+      row.append(info, remove); return row;
+    }));
+    details.append(summary, list);
+    return details;
   }));
 }
 function durationOf(file) {
@@ -548,10 +587,10 @@ $('upload-cover').onchange = async () => {
   if (status === 201) { toast('Cover updated'); await refresh(true); } else toast(`Upload failed (${status})`);
 };
 // フォルダ選択とドロップ。直下のフォルダ名を R2 のフォルダにする。フォルダ直下でないファイルは入力欄のフォルダへ。
-const groupByFolder = entries => groupUploads(entries, $('upload-folder').value.trim());
+const uploadJobsFor = entries => groupUploads(entries, $('upload-folder').value.trim());
 $('upload-dir').onchange = () => {
   const entries = [...$('upload-dir').files].map(file => ({ file, path: file.webkitRelativePath || file.name })); $('upload-dir').value = '';
-  const jobs = groupByFolder(entries);
+  const jobs = uploadJobsFor(entries);
   if (jobs.length) uploadJobs(jobs); else toast('No MP3 found');
 };
 async function readDropped(items) {
@@ -570,7 +609,7 @@ for (const type of ['dragenter', 'dragover']) $('admin').addEventListener(type, 
 $('admin').addEventListener('dragleave', () => $('admin').classList.remove('over'));
 $('admin').addEventListener('drop', async e => {
   e.preventDefault(); $('admin').classList.remove('over');
-  const jobs = groupByFolder(await readDropped([...e.dataTransfer.items]));
+  const jobs = uploadJobsFor(await readDropped([...e.dataTransfer.items]));
   if (jobs.length) uploadJobs(jobs); else toast($('upload-folder').value.trim() ? 'No MP3 found' : 'Drop a folder, or enter a folder name');
 });
 

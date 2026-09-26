@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
@@ -57,6 +57,12 @@ test('playlists: order, resolve, normalise', () => {
   assert.deepEqual(rows.map(r => [r.id, Boolean(r.gone)]), [['x/2.mp3', true], ['x/1.mp3', false]]);
   const clean = PL.normalise({ folders: [{ id: 'z' }], playlists: [{ id: 'q', name: 'Q', folder: 'missing', trackIds: ['a', 'a', 3] }] });
   assert.deepEqual(clean, { playlists: [{ id: 'q', name: 'Q', trackIds: ['a'] }] });
+});
+
+test('folder groups keep order and split on folder change', () => {
+  const list = arrange([t('a', 'B', '1', 'Zed'), t('b', 'A', '1', 'Zed'), t('c', 'C', '1', 'alpha')], 'folder');
+  assert.deepEqual(groupByFolder(list).map(g => [g.folder, g.tracks.map(x => x.id)]), [['alpha', ['c']], ['Zed', ['b', 'a']]]);
+  assert.deepEqual(groupByFolder([]), []);
 });
 
 test('bulk upload groups files by their parent folder', () => {
