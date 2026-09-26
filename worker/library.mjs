@@ -1,0 +1,59 @@
+// R2 の一覧を曲一覧へ整形する純粋関数。Worker からもテストからも同じ入力で同じ答えになる。
+// key = "<folder>/<file>.mp3" が曲、"<folder>/cover.jpg" がフォルダのカバー。
+// 属性（title, duration）が欠ける曲や空ファイルは「壊れたデータ」として一覧に出さない。
+
+export const COVER_NAME = 'cover.jpg';
+
+export function splitKey(key) {
+  const at = key.indexOf('/');
+  if (at <= 0 || at === key.length - 1 || key.indexOf('/', at + 1) >= 0) return null;
+  return { folder: key.slice(0, at), file: key.slice(at + 1) };
+}
+
+export function isTrackKey(key) {
+  const parts = splitKey(key);
+  return Boolean(parts) && /\.mp3$/i.test(parts.file);
+}
+
+export function isCoverKey(key) {
+  const parts = splitKey(key);
+  return Boolean(parts) && parts.file === COVER_NAME;
+}
+
+export function buildLibrary(objects) {
+  const covers = new Set();
+  for (const object of objects) if (isCoverKey(object.key)) covers.add(splitKey(object.key).folder);
+  const tracks = [];
+  for (const object of objects) {
+    if (!isTrackKey(object.key) || !object.size) continue;
+    const meta = object.customMetadata || {};
+    const duration = Number(meta.duration);
+    if (!meta.title || !Number.isFinite(duration) || duration <= 0) continue;
+    const { folder } = splitKey(object.key);
+    tracks.push({
+      id: object.key,
+      folder,
+      title: meta.title,
+      duration: Math.round(duration),
+      size: object.size,
+      uploadedAt: meta.uploadedAt || (object.uploaded instanceof Date ? object.uploaded.toISOString() : String(object.uploaded || '')),
+      cover: covers.has(folder),
+    });
+  }
+  tracks.sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : a.uploadedAt > b.uploadedAt ? -1 : a.id.localeCompare(b.id)));
+  return tracks;
+}
+
+export async function etagFor(tracks) {
+  const text = tracks.map(track => `${track.id}:${track.size}:${track.uploadedAt}:${track.cover ? 1 : 0}`).join('\n');
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
+  return `"${[...new Uint8Array(digest)].slice(0, 10).map(byte => byte.toString(16).padStart(2, '0')).join('')}"`;
+}
+
+// フォルダ名・ファイル名として受け付ける文字。パス区切りと制御文字を拒む。
+export function validName(value, { extension } = {}) {
+  if (typeof value !== 'string' || !value.length || value.length > 200) return false;
+  if (/[\u0000-\u001f\u007f/\\]/.test(value) || value === '.' || value === '..') return false;
+  if (extension && !new RegExp(`\\.${extension}$`, 'i').test(value)) return false;
+  return true;
+}

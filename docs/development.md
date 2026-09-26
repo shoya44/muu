@@ -7,6 +7,7 @@
 - Node.js 24.19.0（`engines` で固定）。npm 11。
 - Cloudflare アカウント `73e71cfc7b30cca7fa6c8f6c26039ceb`、R2 バケット `muu`（作成済み）。
 - ローカルの 8787 番は otoport が使うため、muu は 8790 番（inspector 9290）。
+- E2E はローカル R2 に `E2E/` フォルダを作る。本番バケットには触れない。
 
 ## コマンド
 

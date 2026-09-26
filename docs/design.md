@@ -47,7 +47,8 @@ wrangler.toml           name, assets, r2_buckets, vars
 | PUT /api/tracks/:id | パスワード | アップロード。本文 = MP3、ヘッダに title / duration。既存 key は 409 |
 | PUT /api/covers/:folder | パスワード | cover.jpg のアップロード。上書き可 |
 | DELETE /api/tracks/:id | パスワード | 削除。存在しなくても 204 |
-| GET /version.json | なし | `{ version }`。静的アセット |
+| POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
+| GET /version.json | なし | `{ version }`。Worker が返す |
 
 - パスワードは `Authorization: Bearer <password>` で受け、Worker Secret `ADMIN_PASSWORD` と定数時間比較。
 - 書き込み API は加えて `Sec-Fetch-Site` が `same-origin` であることを要求する。

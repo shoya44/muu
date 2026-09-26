@@ -1,2 +1,192 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>muu</title></head><body></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#212129">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="muu">
+<title>muu</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="loading" class="loading" hidden>Loading...</div>
+
+<main>
+  <section id="view-home" class="view" data-view="home">
+    <div class="toolbar">
+      <label class="toggle" title="Save all">
+        <input id="save-all" type="checkbox" aria-label="Save all tracks">
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-icon" data-icon="download"></span>
+      </label>
+      <span class="spacer"></span>
+      <button id="sort" class="chip" aria-label="Sort"><span data-icon="sort"></span><span id="sort-label">New</span></button>
+    </div>
+    <p id="save-status" class="status"></p>
+    <div id="tracks" class="tracks" role="list"></div>
+    <p id="home-empty" class="empty" hidden>No tracks yet. Upload from Settings.</p>
+  </section>
+
+  <section id="view-playlists" class="view" data-view="playlists" hidden>
+    <div id="playlists-root">
+      <div class="toolbar">
+        <button id="folder-new" class="chip" aria-label="New folder"><span data-icon="folder"></span><span data-icon="add"></span></button>
+        <span class="spacer"></span>
+        <button id="playlist-new" class="chip" aria-label="New playlist"><span data-icon="playlist_add"></span></button>
+      </div>
+      <div id="playlist-cards" class="cards"></div>
+      <p id="playlists-empty" class="empty" hidden>No playlists. Tap + to create one.</p>
+    </div>
+    <div id="playlist-detail" hidden>
+      <div class="toolbar">
+        <button id="playlist-back" class="icon" aria-label="Back"><span data-icon="keyboard_arrow_down" class="rotate90"></span></button>
+        <h2 id="playlist-title" class="title"></h2>
+        <button id="playlist-menu" class="icon" aria-label="Playlist options"><span data-icon="more_horiz"></span></button>
+      </div>
+      <div id="playlist-tracks" class="tracks" role="list"></div>
+      <p id="playlist-empty" class="empty" hidden>Empty. Tap + to add tracks.</p>
+    </div>
+    <button id="fab-add" class="fab" aria-label="Add tracks" hidden><span data-icon="add"></span></button>
+  </section>
+
+  <section id="view-settings" class="view" data-view="settings" hidden>
+    <section class="card">
+      <h3><span data-icon="download_done"></span>Storage</h3>
+      <div class="gauge" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="gauge"><span id="gauge-fill"></span></div>
+      <p id="storage-line" class="muted"></p>
+      <div id="saved-list" class="saved-list"></div>
+      <button id="clear-saved" class="text-button danger" hidden><span data-icon="delete"></span>Remove all saved</button>
+    </section>
+
+    <section class="card">
+      <h3><span data-icon="play_arrow"></span>Playback</h3>
+      <label class="row"><span>Auto save new tracks</span><input id="opt-autosave" type="checkbox" class="switch"></label>
+      <label class="row"><span>Skip seconds</span><select id="opt-skip"><option>5</option><option>10</option><option>15</option><option>30</option></select></label>
+      <label class="row"><span>Resume on launch</span><input id="opt-resume" type="checkbox" class="switch"></label>
+    </section>
+
+    <section class="card">
+      <h3><span data-icon="key"></span>Library</h3>
+      <form id="password-form" class="row">
+        <input id="password" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">
+        <button class="icon" type="submit" aria-label="Save password"><span data-icon="check"></span></button>
+      </form>
+      <p id="password-state" class="muted"></p>
+      <div id="admin" class="admin" hidden>
+        <form id="upload-form">
+          <input id="upload-folder" list="folders" placeholder="Folder" required aria-label="Folder" maxlength="100">
+          <datalist id="folders"></datalist>
+          <label class="file-button"><span data-icon="upload"></span><span>MP3</span><input id="upload-files" type="file" accept="audio/mpeg,.mp3" multiple hidden></label>
+          <label class="file-button"><span data-icon="upload"></span><span>Cover</span><input id="upload-cover" type="file" accept="image/jpeg" hidden></label>
+        </form>
+        <p id="upload-status" class="status"></p>
+        <div id="admin-tracks" class="saved-list"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3><span data-icon="info"></span>App</h3>
+      <div class="row"><span>Version</span><span id="version" class="muted"></span></div>
+      <button id="check-update" class="text-button"><span data-icon="refresh"></span>Check for update</button>
+    </section>
+  </section>
+</main>
+
+<div id="mini" class="mini" hidden>
+  <div class="mini-progress"><span id="mini-bar"></span></div>
+  <button id="mini-open" class="mini-open" aria-label="Open player">
+    <img id="mini-cover" class="mini-cover" alt="" src="/icon-192.png">
+    <span id="mini-title" class="mini-title"></span>
+  </button>
+  <button class="icon" data-player="toggle" aria-label="Play"></button>
+  <button class="icon" data-player="next" aria-label="Next"><span data-icon="skip_next"></span></button>
+</div>
+
+<nav class="navbar" aria-label="Main">
+  <button class="nav-item on" data-nav="home" aria-label="Home"><span data-icon="home"></span><span class="nav-label">Home</span></button>
+  <button class="nav-item" data-nav="playlists" aria-label="Playlists"><span data-icon="library_music"></span><span class="nav-label">Playlists</span></button>
+  <button class="nav-item" data-nav="settings" aria-label="Settings"><span data-icon="settings"></span><span class="nav-label">Settings</span></button>
+</nav>
+
+<dialog id="now" class="sheet" aria-label="Now playing">
+  <div id="sheet-gesture" class="handle"><span></span></div>
+  <div id="sheet-scroll" class="sheet-scroll">
+    <img id="sheet-cover" class="sheet-cover" alt="" src="/icon-512.png">
+    <h2 id="now-title" class="now-title"></h2>
+    <p id="now-subtitle" class="muted"></p>
+    <ol id="queue" class="queue" aria-label="Queue"></ol>
+  </div>
+  <div class="transport">
+    <div class="seek-row">
+      <span id="sheet-elapsed" class="time">0:00</span>
+      <input id="sheet-seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Seek">
+      <span id="sheet-duration" class="time">0:00</span>
+    </div>
+    <div class="buttons">
+      <button id="shuffle" class="icon" aria-label="Shuffle" aria-pressed="false"><span data-icon="shuffle"></span></button>
+      <button class="icon big" data-player="previous" aria-label="Previous"><span data-icon="skip_previous"></span></button>
+      <button class="icon huge" data-player="toggle" aria-label="Play"></button>
+      <button class="icon big" data-player="next" aria-label="Next"><span data-icon="skip_next"></span></button>
+      <button id="sheet-close" class="icon" aria-label="Close"><span data-icon="keyboard_arrow_down"></span></button>
+    </div>
+  </div>
+</dialog>
+
+<div id="popover" class="popover" role="menu" hidden></div>
+
+<dialog id="confirm" class="dialog">
+  <p id="confirm-text"></p>
+  <div class="dialog-actions">
+    <button id="confirm-cancel" class="text-button" value="cancel">Cancel</button>
+    <button id="confirm-ok" class="text-button danger" value="ok">OK</button>
+  </div>
+</dialog>
+
+<dialog id="detail" class="dialog">
+  <h3 id="detail-title"></h3>
+  <dl id="detail-list" class="detail"></dl>
+  <div class="dialog-actions"><button id="detail-close" class="text-button">Close</button></div>
+</dialog>
+
+<dialog id="picker" class="dialog">
+  <h3 id="picker-title">Add to playlist</h3>
+  <div id="picker-list" class="picker"></div>
+  <form id="picker-new" class="row">
+    <input id="picker-name" placeholder="New playlist" aria-label="New playlist name" maxlength="60">
+    <button class="icon" type="submit" aria-label="Create"><span data-icon="add"></span></button>
+  </form>
+  <div class="dialog-actions"><button id="picker-cancel" class="text-button">Cancel</button></div>
+</dialog>
+
+<dialog id="prompt" class="dialog">
+  <form id="prompt-form" method="dialog">
+    <h3 id="prompt-title"></h3>
+    <input id="prompt-input" aria-label="Name" maxlength="60" required>
+    <div class="dialog-actions">
+      <button type="button" id="prompt-cancel" class="text-button">Cancel</button>
+      <button type="submit" class="text-button">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="chooser" class="dialog">
+  <h3>Add tracks</h3>
+  <div id="chooser-list" class="chooser"></div>
+  <div class="dialog-actions">
+    <button id="chooser-cancel" class="text-button">Cancel</button>
+    <button id="chooser-ok" class="text-button">Add</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-action" class="text-button" hidden></button></div>
+<audio id="audio" preload="metadata"></audio>
+<script type="module" src="/app.mjs"></script>
+</body>
+</html>

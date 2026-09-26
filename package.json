@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8790 --inspector-port 9290",
     "deploy": "wrangler deploy",
-    "icons": "node scripts/icons.mjs",
+    "icons": "node scripts/icons.mjs && node scripts/icon.mjs",
     "test": "node --test \"test/unit/*.test.mjs\"",
     "test:e2e": "playwright test --config test/playwright.config.mjs"
   },

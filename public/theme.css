@@ -1,0 +1,65 @@
+/* muu デザイントークン。色・角・動き・文字サイズはここにだけ書く。
+   画面はトークン名だけを参照し、Hex を直接書かない。
+   パレット（指定）: #212129 #323949 #3d3e51 #40445a #4c5265。文字は白系、差し色は塗り専用。 */
+:root {
+  /* Colour: surfaces */
+  --md-sys-color-background: #212129;
+  --md-sys-color-surface: #212129;
+  --md-sys-color-surface-container-lowest: #1a1a21;
+  --md-sys-color-surface-container-low: #2a2c38;
+  --md-sys-color-surface-container: #323949;
+  --md-sys-color-surface-container-high: #3d3e51;
+  --md-sys-color-surface-container-highest: #40445a;
+  --md-sys-color-on-surface: #e8e8ee;
+  --md-sys-color-on-surface-variant: #aeb1c2;
+  --md-sys-color-outline: #7d8296;
+  --md-sys-color-outline-variant: #40445a;
+  --md-sys-color-scrim: #000a;
+
+  /* Colour: accent。塗り専用。文字色には使わない。 */
+  --md-sys-color-primary: #4c5265;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #3d3e51;
+  --md-sys-color-on-primary-container: #e8e8ee;
+  /* 明るい差し色が必要な箇所（進捗の先端、選択中のアイコン）。落ち着いた青灰。 */
+  --md-sys-color-tertiary: #9aa3bd;
+  --md-sys-color-error: #d99a92;
+  --md-sys-color-on-error: #2b0f0a;
+  --md-sys-color-inverse-surface: #e8e8ee;
+  --md-sys-color-inverse-on-surface: #212129;
+
+  /* State layers */
+  --muu-state-hover: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  --muu-state-pressed: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  --muu-elevation: 0 6px 24px #0008;
+
+  /* Shape */
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 999px;
+
+  /* Motion */
+  --md-sys-motion-duration-short2: 100ms;
+  --md-sys-motion-duration-short4: 200ms;
+  --md-sys-motion-duration-medium2: 300ms;
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+
+  /* Typography */
+  --md-sys-typescale-brand-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --md-sys-typescale-label-small-size: 11px;
+  --md-sys-typescale-label-medium-size: 12px;
+  --md-sys-typescale-label-large-size: 14px;
+  --md-sys-typescale-body-medium-size: 14px;
+  --md-sys-typescale-body-large-size: 16px;
+  --md-sys-typescale-title-medium-size: 18px;
+  --md-sys-typescale-title-large-size: 22px;
+
+  /* Layout */
+  --muu-nav-height: 64px;
+  --muu-mini-height: 60px;
+  --muu-touch: 48px;
+}
+::backdrop { --md-sys-color-scrim: #000a; }
