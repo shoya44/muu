@@ -102,3 +102,9 @@ test('service worker update activates on request', async ({ page }) => {
   });
   expect(swapped).toBe(true);
 });
+
+test('library reports cloud usage and limit', async ({ request, baseURL }) => {
+  const body = await (await request.get(`${baseURL}/api/library`)).json();
+  expect(body.limit).toBe(9663676416);
+  expect(body.used).toBeGreaterThan(0);
+});

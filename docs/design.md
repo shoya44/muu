@@ -44,7 +44,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover}] }` |
 | GET /media/:id | なし | MP3。Range 対応（R2 の range get をそのまま返す）。無ければ 404 |
 | GET /covers/:folder | なし | cover.jpg。無ければ 404、PWA は代替画像 |
-| PUT /api/tracks/:id | パスワード | アップロード。本文 = MP3、ヘッダに title / duration。既存 key は 409 |
+| PUT /api/tracks/:id | パスワード | アップロード。本文 = MP3、ヘッダに title / duration。既存 key は 409。バケット合計が `MAX_BUCKET_BYTES`（既定 9 GB）を超えるなら 507 |
 | PUT /api/covers/:folder | パスワード | cover.jpg のアップロード。上書き可 |
 | DELETE /api/tracks/:id | パスワード | 削除。存在しなくても 204 |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |

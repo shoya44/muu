@@ -80,7 +80,7 @@ async function library(request, env, ctx, url) {
   if (!response) {
     const tracks = buildLibrary(await listAll(env.MEDIA));
     const etag = await etagFor(tracks);
-    response = json({ etag, tracks }, 200, { etag, 'cache-control': `public, max-age=${LIBRARY_TTL}` });
+    response = json({ etag, tracks, used: tracks.reduce((sum, track) => sum + track.size, 0), limit: Number(env.MAX_BUCKET_BYTES) || 0 }, 200, { etag, 'cache-control': `public, max-age=${LIBRARY_TTL}` });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
   }
   if (request.headers.get('if-none-match') === response.headers.get('etag')) {
@@ -143,6 +143,11 @@ async function uploadTrack(request, env, ctx, key, url) {
   if (!Number.isFinite(duration) || duration <= 0) return fail(400, 'invalid_duration');
   if (!size || size > MAX_UPLOAD) return fail(413, 'too_large');
   if (await env.MEDIA.head(key)) return fail(409, 'exists');
+  const limit = Number(env.MAX_BUCKET_BYTES);
+  if (limit) {
+    const used = (await listAll(env.MEDIA)).reduce((sum, object) => sum + object.size, 0);
+    if (used + size > limit) return json({ error: 'storage_full', used, limit }, 507);
+  }
   const uploadedAt = new Date().toISOString();
   await env.MEDIA.put(key, request.body, {
     httpMetadata: { contentType: 'audio/mpeg' },

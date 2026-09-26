@@ -12,7 +12,7 @@ import { VERSION } from './version.mjs';
 const $ = id => document.getElementById(id);
 let tracks = [], saved = new Map(), store = PL.emptyStore();
 let settings = { sort: 'new', autosave: false, resume: true, password: '' };
-let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '';
+let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '', cloud = { used: 0, limit: 0 };
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
 let activeKey, queueShape, selecting = null;
 const known = new Set();
@@ -435,6 +435,7 @@ $('password-form').onsubmit = async event => {
   if (adminOK) toast('Unlocked');
 };
 function renderAdmin() {
+  $('cloud-line').textContent = cloud.limit ? `Cloud ${megabytes(cloud.used)} / ${megabytes(cloud.limit)}` : `Cloud ${megabytes(cloud.used)}`;
   $('folders').replaceChildren(...[...new Set(tracks.map(t => t.folder))].sort().map(name => { const o = document.createElement('option'); o.value = name; return o; }));
   const list = arrange(tracks.filter(t => !t.gone), 'new');
   $('admin-tracks').replaceChildren(...list.map(track => {
@@ -472,7 +473,10 @@ $('upload-files').onchange = async () => {
     if (!duration) { toast(`Can't read ${file.name}`); continue; }
     const key = `${folder}/${safeFileName(file.name)}`;
     const r = await fetch(`/api/tracks/${encodeURIComponent(key)}`, { method: 'PUT', body: file, headers: { ...authHeaders(), 'content-type': 'audio/mpeg', 'x-title': encodeURIComponent(titleOf(file.name)), 'x-duration': String(duration) } });
-    if (r.status === 201) done++; else if (r.status === 409) toast(`Exists: ${file.name}`); else toast(`Upload failed (${r.status})`);
+    if (r.status === 201) done++;
+    else if (r.status === 409) toast(`Exists: ${file.name}`);
+    else if (r.status === 507) { toast('Cloud storage is full'); break; }
+    else toast(`Upload failed (${r.status})`);
   }
   $('upload-status').textContent = '';
   if (done) { toast(`Uploaded ${done}`); await refresh(true); }
@@ -496,6 +500,7 @@ async function refresh(force = false) {
       const body = await response.json();
       if (!Array.isArray(body.tracks)) throw new Error('invalid');
       libraryEtag = body.etag || '';
+      cloud = { used: body.used || 0, limit: body.limit || 0 };
       tracks = mergeLibrary(body.tracks, tracks, savedIDs());
       writeState('library', { etag: libraryEtag, tracks }).catch(() => {});
       player.refreshTracks(trackByID);

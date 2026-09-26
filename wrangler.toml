@@ -11,5 +11,9 @@ not_found_handling = "single-page-application"
 binding = "MEDIA"
 bucket_name = "muu"
 
+[vars]
+# バケット合計の上限（バイト）。超えるアップロードは 507 で拒む。無料枠 10 GB の内側に置く。
+MAX_BUCKET_BYTES = "9663676416"
+
 [observability]
 enabled = true
