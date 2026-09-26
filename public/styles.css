@@ -162,8 +162,8 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 .sheet-scroll { flex: 1; overflow-y: auto; padding: 0 20px 16px; overscroll-behavior: contain; outline: none; }
 .sheet-scroll.at-top { touch-action: pan-up; }
 .sheet-cover { width: min(80vw, 360px, calc(100vh - 420px)); aspect-ratio: 1; object-fit: cover; border-radius: var(--md-sys-shape-corner-large); display: block; margin: 0 auto 20px; background: var(--md-sys-color-surface-container); box-shadow: var(--muu-elevation); }
-/* カバーが無いフォルダは、代替画像を小さく置いて余白を空けない。 */
-.sheet-cover.placeholder { width: 120px; box-shadow: none; margin: 16px auto 20px; }
+/* カバーが無いフォルダは、同じ大きさの枠に代替画像（レコード風）を出す。影は付けない。 */
+.sheet-cover.placeholder { box-shadow: none; }
 /* カバーと歌詞は同じ枠を使う。歌詞の枠はカバーと同じ大きさで、中だけスクロールする。 */
 .sheet-art { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: var(--md-sys-shape-corner-large); }
 .sheet-art:hover, .sheet-art:active { background: none; transform: none; }

@@ -109,9 +109,9 @@ function renderPlayer() {
   if (!track) return;
   $('mini-title').textContent = $('now-title').textContent = track.title;
   const paused = player.audio.paused;
-  const cover = coverURL(track) || '/icon-512.png';
+  const cover = coverURL(track) || '/cover-placeholder.svg';
   const image = $('sheet-cover');
-  if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; image.classList.add('placeholder'); }; }
+  if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/cover-placeholder.svg'; image.classList.add('placeholder'); }; }
   image.classList.toggle('placeholder', !coverURL(track));
   if ($('sheet-art').dataset.track !== track.id) { $('sheet-art').dataset.track = track.id; showLyrics(false); }
   $('sheet-art').classList.toggle('no-lyrics', !track.lyrics);
@@ -212,7 +212,7 @@ function makeRow(track, { list, playlist, select, grouped } = {}) {
 // 曲の「…」メニュー。行でも再生画面でも同じ項目。
 function trackMenu(track, playlist) {
   return [
-    { icon: 'playlist_play', label: 'Play next', run: () => { player.playNext(track); toast('Added to queue'); }, disabled: !playableNow(track) || player.track?.id === track.id },
+    { icon: 'playlist_play', label: 'Play next', run: () => { player.playNext(track); toast('Added to queue'); }, disabled: !playableNow(track) },
     { icon: 'playlist_add', label: 'Add to playlist', run: () => pickPlaylist([track.id]) },
     { icon: 'share', label: 'Share', run: () => shareTrack(track), disabled: track.gone && !saved.has(track.id) },
     { icon: 'info', label: 'Details', run: () => showDetails(track) },
@@ -741,10 +741,17 @@ async function refresh(force = false) {
   })();
   try { await refreshing; } finally { refreshing = undefined; }
 }
+// 版が違えば更新。同じ版でも出し直し（built が違う）は更新。
+// 再生中でなければ黙って適用する。再生中はトーストで知らせ、勝手には読み込み直さない。
 async function checkUpdate(manual = false) {
   try {
-    const { version } = await (await fetch('/version.json', { cache: 'no-store' })).json();
-    if (version && version !== VERSION) {
+    const { version, built } = await (await fetch('/version.json', { cache: 'no-store' })).json();
+    const newer = version && (version !== VERSION || (built && BUILT && built !== BUILT));
+    if (newer) {
+      // 黙って適用するのはセッションに一度だけ。取得に失敗して読み込み直しを繰り返さないため。
+      if ((player.audio.paused || !player.track) && !sessionStorage.getItem('muu-auto-update')) {
+        sessionStorage.setItem('muu-auto-update', '1'); applyUpdate(); return;
+      }
       if (announcedUpdate && !manual) return;
       announcedUpdate = true;
       toast(`Update ${version} available`, { label: 'Update', run: applyUpdate });

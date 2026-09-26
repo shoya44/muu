@@ -78,7 +78,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | 同 キー `playlists` | My Playlist |
 | 同 キー `player` | 現在曲、位置、キュー、シャッフル、リピート |
 | 同 キー `settings` | ソート、自動保存、復元、パスワード、設定カードの開閉 |
-| Cache `muu-shell-<ver>` | アプリ本体。新版が有効になると旧版だけ捨てる |
+| Cache `muu-shell-<ver>-<built>` | アプリ本体。名前にデプロイ時刻を含むので、同じ版の出し直しでも新しい本体になる。新版が有効になると旧版だけ捨てる |
 | Cache `muu-media-v1` | 音声。key = `/media/<id>`。保存済みの索引はこの Cache の key から都度作る（別の索引は持たない） |
 | Cache `muu-covers-v1` | カバー |
 | Cache `muu-lyrics-v1` | 歌詞。key = `/lyrics/<id>`。曲の解除で一緒に消す |

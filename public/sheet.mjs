@@ -61,6 +61,8 @@ export function setupSheet(dialog, { opening }) {
   // the finger, so later events do not reach the element it started on.
   window.addEventListener('pointermove', event => {
     if (!drag || drag.id !== event.pointerId) return;
+    // 列の中で行が持ち上がった（並べ替え）なら、その指はシートのものではない。
+    if (drag.fromColumn && event.target.closest?.('.dragging')) { drag = undefined; return; }
     const dy = event.clientY - drag.y, dx = event.clientX - drag.x;
     if (drag.vertical === undefined) {
       if (Math.abs(dy) < FOLLOW && Math.abs(dx) < FOLLOW) return;
