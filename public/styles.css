@@ -164,6 +164,15 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 .sheet-cover { width: min(80vw, 360px, calc(100vh - 420px)); aspect-ratio: 1; object-fit: cover; border-radius: var(--md-sys-shape-corner-large); display: block; margin: 0 auto 20px; background: var(--md-sys-color-surface-container); box-shadow: var(--muu-elevation); }
 /* カバーが無いフォルダは、代替画像を小さく置いて余白を空けない。 */
 .sheet-cover.placeholder { width: 120px; box-shadow: none; margin: 16px auto 20px; }
+/* カバーと歌詞は同じ枠を使う。歌詞の枠はカバーと同じ大きさで、中だけスクロールする。 */
+.sheet-art { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: var(--md-sys-shape-corner-large); }
+.sheet-art:hover, .sheet-art:active { background: none; transform: none; }
+.sheet-art.no-lyrics { cursor: default; }
+.sheet-art .sheet-cover { margin-bottom: 20px; }
+.sheet-lyrics { width: min(80vw, 360px, calc(100vh - 420px)); aspect-ratio: 1; box-sizing: border-box; margin: 0 auto 20px; padding: 16px; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container); box-shadow: var(--muu-elevation); font: inherit; font-size: var(--md-sys-typescale-body-large-size); line-height: 1.7; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.sheet-lyrics::after { content: ''; display: block; height: 32px; }
+.sheet-lyrics { touch-action: pan-y; }
+.sheet-lyrics.at-top { touch-action: pan-up; }
 .now-title { font-size: var(--md-sys-typescale-title-large-size); margin: 0; text-align: center; font-weight: 600; overflow-wrap: anywhere; }
 .sheet .muted { text-align: center; }
 .queue { list-style: none; margin: 20px 0 0; padding: 0; }
@@ -200,6 +209,7 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border: 0; bord
 .dialog h3 { margin: 0 0 12px; font-size: var(--md-sys-typescale-title-medium-size); font-weight: 500; overflow-wrap: anywhere; }
 .dialog p { margin: 0 0 8px; line-height: 1.6; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 12px; }
+.dialog textarea { display: block; width: 100%; box-sizing: border-box; min-height: 40vh; resize: vertical; background: var(--md-sys-color-surface-container-highest, var(--md-sys-color-surface-container-high)); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); color: inherit; padding: 10px 12px; font: inherit; line-height: 1.6; }
 .detail { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: var(--md-sys-typescale-body-medium-size); }
 .detail dt { color: var(--md-sys-color-on-surface-variant); }
 .detail dd { margin: 0; overflow-wrap: anywhere; }

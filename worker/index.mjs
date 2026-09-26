@@ -1,10 +1,11 @@
 // muu Worker: 静的 PWA と API を同一オリジンで配信する。API の一覧は docs/design.md 4 章。
-import { buildLibrary, etagFor, validName, isTrackKey, COVER_NAME } from './library.mjs';
+import { buildLibrary, etagFor, validName, isTrackKey, lyricsKeyFor, COVER_NAME } from './library.mjs';
 import { authorize } from './auth.mjs';
 import { VERSION, BUILT } from '../public/version.mjs';
 
 const LIBRARY_TTL = 30; // 秒。一覧は R2 の list() を叩き直すより短く保つ。
 const MAX_UPLOAD = 95 * 1024 * 1024;
+const MAX_LYRICS = 64 * 1024; // 歌詞はテキストだけ。数十 KB あれば足りる。
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers } });
@@ -18,6 +19,7 @@ export default {
       if (root === 'api') return api(request, env, ctx, rest, url);
       if (root === 'media' && rest.length === 1) return media(request, env, decodeURIComponent(rest[0]));
       if (root === 'covers' && rest.length === 1) return cover(request, env, decodeURIComponent(rest[0]));
+      if (root === 'lyrics' && rest.length === 1) return lyrics(request, env, decodeURIComponent(rest[0]));
       if (url.pathname === '/version.json') return json({ version: VERSION, built: BUILT }, 200, { 'cache-control': 'no-cache' });
       return env.ASSETS.fetch(request);
     } catch (error) {
@@ -42,6 +44,12 @@ async function api(request, env, ctx, rest, url) {
   if (resource === 'covers' && path.length === 1) {
     const folder = decodeURIComponent(path[0]);
     if (request.method === 'PUT') return withAuth(request, env, () => uploadCover(request, env, ctx, folder, url));
+    return fail(405, 'method_not_allowed');
+  }
+  if (resource === 'lyrics' && path.length === 1) {
+    const key = decodeURIComponent(path[0]);
+    if (request.method === 'PUT') return withAuth(request, env, () => uploadLyrics(request, env, ctx, key, url));
+    if (request.method === 'DELETE') return withAuth(request, env, () => deleteLyrics(env, ctx, key, url));
     return fail(405, 'method_not_allowed');
   }
   if (resource === 'auth' && !path.length) {
@@ -128,6 +136,18 @@ async function cover(request, env, folder) {
   return new Response(object.body, { headers });
 }
 
+// 歌詞。曲の ID で引く。無ければ 404。
+async function lyrics(request, env, key) {
+  if (request.method !== 'GET') return fail(405, 'method_not_allowed');
+  const lyricsKey = lyricsKeyFor(key);
+  if (!lyricsKey) return fail(404, 'not_found');
+  const object = await env.MEDIA.get(lyricsKey, { onlyIf: request.headers });
+  if (!object) return fail(404, 'not_found');
+  const headers = new Headers({ 'content-type': 'text/plain; charset=utf-8', etag: object.httpEtag, 'cache-control': 'public, max-age=60' });
+  if (!('body' in object)) return new Response(null, { status: 304, headers });
+  return new Response(object.body, { headers });
+}
+
 // ---- 書き込み ----
 
 async function uploadTrack(request, env, ctx, key, url) {
@@ -168,9 +188,33 @@ async function uploadCover(request, env, ctx, folder, url) {
   return json({ folder }, 201);
 }
 
+// 歌詞の登録。本文はプレーンテキスト。空なら削除と同じ。曲が無い歌詞は置かない。
+async function uploadLyrics(request, env, ctx, key, url) {
+  const lyricsKey = lyricsKeyFor(key);
+  if (!lyricsKey) return fail(400, 'invalid_key');
+  const size = Number(request.headers.get('content-length'));
+  if (size > MAX_LYRICS) return fail(413, 'too_large');
+  const text = (await request.text()).replace(/\r\n?/g, '\n').trim();
+  if (text.length > MAX_LYRICS) return fail(413, 'too_large');
+  if (!text) return deleteLyrics(env, ctx, key, url);
+  if (!(await env.MEDIA.head(key))) return fail(404, 'not_found');
+  await env.MEDIA.put(lyricsKey, text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
+  forgetLibrary(ctx, url);
+  return json({ id: key, lyrics: true }, 201);
+}
+
+async function deleteLyrics(env, ctx, key, url) {
+  const lyricsKey = lyricsKeyFor(key);
+  if (!lyricsKey) return fail(400, 'invalid_key');
+  await env.MEDIA.delete(lyricsKey);
+  forgetLibrary(ctx, url);
+  return new Response(null, { status: 204 });
+}
+
 async function deleteTrack(env, ctx, key, url) {
   if (!isTrackKey(key)) return fail(400, 'invalid_key');
-  await env.MEDIA.delete(key);
+  // 歌詞は曲の付随物。曲と一緒に消す。
+  await env.MEDIA.delete([key, lyricsKeyFor(key)]);
   forgetLibrary(ctx, url);
   return new Response(null, { status: 204 });
 }

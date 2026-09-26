@@ -30,23 +30,27 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 ```text
 <folder>/<file>.mp3   customMetadata: title, duration(秒), uploadedAt(ISO)
+<folder>/<file>.txt   同名の曲の歌詞（UTF-8、64 KB まで、改行は LF に正規化）
 <folder>/cover.jpg
 ```
 
 - 楽曲 ID = オブジェクト key。URL エンコードしてパスに載せる。
-- Worker の一覧 API は `list()` を prefix なしで回し（1000 件 / 回、continuation）、`.mp3` だけを曲、`cover.jpg` をフォルダカバーとして組み立てる。customMetadata が欠ける曲、size 0 の曲は除外。
+- Worker の一覧 API は `list()` を prefix なしで回し（1000 件 / 回、continuation）、`.mp3` だけを曲、`cover.jpg` をフォルダカバー、`.txt` を同名の曲の歌詞（`lyrics: true`。大文字小文字は区別しない）として組み立てる。customMetadata が欠ける曲、size 0 の曲は除外。
 - 一覧は Worker 側で 30 秒 Cache API に置く。ETag は一覧 JSON のハッシュ。PWA は `If-None-Match` で差分有無だけ確認する。
 
 ## 4. API
 
 | API | 認可 | 用途 |
 | --- | --- | --- |
-| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover}] }` |
+| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics}] }` |
 | GET /media/:id | なし | MP3。Range 対応（R2 の range get をそのまま返す）。無ければ 404 |
 | GET /covers/:folder | なし | cover.jpg。無ければ 404、PWA は代替画像 |
+| GET /lyrics/:id | なし | 歌詞。`text/plain; charset=utf-8`。無ければ 404 |
 | PUT /api/tracks/:id | パスワード | アップロード。本文 = MP3、ヘッダに title / duration。既存 key は 409。バケット合計が `MAX_BUCKET_BYTES`（既定 9 GB）を超えるなら 507 |
 | PUT /api/covers/:folder | パスワード | cover.jpg のアップロード。上書き可 |
-| DELETE /api/tracks/:id | パスワード | 削除。存在しなくても 204 |
+| PUT /api/lyrics/:id | パスワード | 歌詞の登録。本文 = プレーンテキスト。上書き可。空本文は削除（204）。曲が無ければ 404 |
+| DELETE /api/lyrics/:id | パスワード | 歌詞の削除。存在しなくても 204 |
+| DELETE /api/tracks/:id | パスワード | 削除。歌詞も一緒に消す。存在しなくても 204 |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
 | GET /version.json | なし | `{ version, built }`。Worker が返す |
 
@@ -63,7 +67,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 - `downloads.mjs`：音声とカバーの保存。完全に受信できたときだけ Cache に入れる。
 - `playlists.mjs`：My Playlist のデータ（id, name, trackIds[]。配列順が表示順）。曲参照は R2 key。一覧に無い key はグレー表示。
 - `sheet.mjs` / `popover.mjs` / `drag.mjs`：再生画面のスワイプ、アンカー付きメニュー、長押しドラッグの並べ替え。
-- `sw.mjs`：アプリ本体は precache、`/media/*` は Cache Storage 優先・無ければネットワーク、`/api/*` はネットワークのみ。更新時に音声キャッシュへ触らない。
+- `sw.mjs`：アプリ本体は precache、`/media/*` は Cache Storage 優先・無ければネットワーク、`/lyrics/*` はネットワーク優先・失敗したら Cache（曲が保存済みなら取れた歌詞を Cache に置く）、`/api/*` はネットワークのみ。更新時に音声キャッシュへ触らない。
 - 状態管理はモジュール変数と再描画関数。フレームワークなし。
 
 ## 6. 端末内データ
@@ -77,6 +81,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | Cache `muu-shell-<ver>` | アプリ本体。新版が有効になると旧版だけ捨てる |
 | Cache `muu-media-v1` | 音声。key = `/media/<id>`。保存済みの索引はこの Cache の key から都度作る（別の索引は持たない） |
 | Cache `muu-covers-v1` | カバー |
+| Cache `muu-lyrics-v1` | 歌詞。key = `/lyrics/<id>`。曲の解除で一緒に消す |
 
 ## 7. テーマ
 

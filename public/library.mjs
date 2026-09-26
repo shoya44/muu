@@ -17,6 +17,7 @@ export function arrange(tracks, sort = 'folder') {
 
 export const mediaURL = track => `/media/${encodeURIComponent(track.id)}`;
 export const coverURL = track => (track?.cover ? `/covers/${encodeURIComponent(track.folder)}` : '');
+export const lyricsURL = track => `/lyrics/${encodeURIComponent(track.id)}`;
 
 export const megabytes = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 // 容量の表示。1 GB 以上は GB で、それ未満は MB で。
@@ -68,16 +69,21 @@ export const titleOf = fileName => String(fileName).replace(/\.[^.]*$/, '').trim
 
 // まとめてアップロードする入力を、フォルダごとの仕事に分ける。
 // entries = [{ file, path }]。path の親ディレクトリ名がフォルダ。親が無ければ fallback（入力欄）。cover.jpg はそのフォルダのカバー。
+// <name>.txt は同名の <name>.mp3 の歌詞（同時に送る曲でも、既に R2 に有る曲でもよい）。
 export const isMP3 = name => /\.mp3$/i.test(name);
+export const isText = name => /\.txt$/i.test(name);
+// 歌詞ファイル名から曲の key を引く。safeFileName と同じ整形なので、同名の MP3 と一致する。
+export const lyricsTarget = (folder, name) => `${folder}/${safeFileName(name)}`;
 export function groupUploads(entries, fallback = '') {
   const jobs = new Map();
-  const jobFor = folder => { if (!jobs.has(folder)) jobs.set(folder, { folder, files: [], cover: undefined }); return jobs.get(folder); };
+  const jobFor = folder => { if (!jobs.has(folder)) jobs.set(folder, { folder, files: [], cover: undefined, lyrics: [] }); return jobs.get(folder); };
   for (const { file, path } of entries) {
     const parts = String(path).split('/').filter(Boolean);
     const folder = parts.length > 1 ? parts[parts.length - 2] : fallback;
     if (!folder) continue;
     if (isMP3(file.name)) jobFor(folder).files.push(file);
     else if (/^cover\.jpe?g$/i.test(file.name)) jobFor(folder).cover = file;
+    else if (isText(file.name)) jobFor(folder).lyrics.push({ file, id: lyricsTarget(folder, file.name) });
   }
-  return [...jobs.values()].filter(job => job.files.length || job.cover);
+  return [...jobs.values()].filter(job => job.files.length || job.cover || job.lyrics.length);
 }

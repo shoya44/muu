@@ -2,6 +2,7 @@
 // 音声・カバーは Cache Storage。アプリ更新で音声を消さないため、名前にバージョンを含めない。
 export const AUDIO_CACHE = 'muu-media-v1';
 export const COVER_CACHE = 'muu-covers-v1';
+export const LYRICS_CACHE = 'muu-lyrics-v1';
 let database;
 
 function openDB() {
@@ -45,11 +46,14 @@ export async function savedTracks() {
   }
   return map;
 }
+// 歌詞は曲の付随物。曲と一緒に消す。
 export async function removeSaved(id) {
+  await (await caches.open(LYRICS_CACHE)).delete(`/lyrics/${encodeURIComponent(id)}`);
   const cache = await caches.open(AUDIO_CACHE);
   return cache.delete(`/media/${encodeURIComponent(id)}`);
 }
 export async function clearSaved() {
+  await caches.delete(LYRICS_CACHE);
   await caches.delete(AUDIO_CACHE);
 }
 export async function estimate() {

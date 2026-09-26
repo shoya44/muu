@@ -41,6 +41,9 @@ export function setupSheet(dialog, { opening }) {
     if (event.target.closest('button,input') || !event.isPrimary) return;
     const fromColumn = event.currentTarget === column;
     if (fromColumn && column.scrollTop > 0) return;
+    // 列の中で自前にスクロールする箱（歌詞）は、上端にいない間は箱のスクロール。
+    const inner = event.target.closest('[data-scrolls]');
+    if (inner && inner.scrollTop > 0) return;
     drag = { id: event.pointerId, x: event.clientX, y: event.clientY, travelled: 0, fromColumn };
     if (!fromColumn) {
       // The handle is the sheet's own gesture, so it is claimed immediately.

@@ -98,10 +98,11 @@
           <datalist id="folders"></datalist>
           <label class="file-button"><span data-icon="upload"></span><span>MP3</span><input id="upload-files" type="file" accept="audio/mpeg,.mp3" multiple hidden></label>
           <label class="file-button"><span data-icon="upload"></span><span>Cover</span><input id="upload-cover" type="file" accept="image/jpeg" hidden></label>
+          <label class="file-button"><span data-icon="lyrics"></span><span>Lyrics</span><input id="upload-lyrics" type="file" accept="text/plain,.txt" multiple hidden></label>
           <label class="file-button"><span data-icon="folder"></span><span>Folders</span><input id="upload-dir" type="file" webkitdirectory multiple hidden></label>
         </form>
         <!-- PC ではフォルダごとここへドロップできる。フォルダ名がそのまま R2 のフォルダになる。 -->
-        <p id="drop-hint" class="muted drop-hint">Drop folders here: each folder becomes an album, cover.jpg included.</p>
+        <p id="drop-hint" class="muted drop-hint">Drop folders here: each folder becomes an album, cover.jpg included. A .txt with the same name as an MP3 becomes its lyrics.</p>
         <p id="upload-status" class="status"></p>
         <p id="cloud-line" class="muted"></p>
         <div id="admin-tracks" class="saved-list"></div>
@@ -140,7 +141,11 @@
     <button id="sheet-menu" class="icon" aria-label="More"><span data-icon="more_horiz"></span></button>
   </div>
   <div id="sheet-scroll" class="sheet-scroll" tabindex="-1">
-    <img id="sheet-cover" class="sheet-cover" alt="" src="/icon-512.png">
+    <!-- カバーをタップすると同じ枠に歌詞が出る。もう一度タップで戻る。歌詞が無ければ何も起きない。 -->
+    <div id="sheet-art" class="sheet-art" role="button" tabindex="0" aria-label="Show lyrics" aria-pressed="false">
+      <img id="sheet-cover" class="sheet-cover" alt="" src="/icon-512.png">
+      <pre id="sheet-lyrics" class="sheet-lyrics at-top" data-scrolls hidden></pre>
+    </div>
     <h2 id="now-title" class="now-title"></h2>
     <p id="now-subtitle" class="muted"></p>
     <ol id="queue" class="queue" aria-label="Queue"></ol>
@@ -175,6 +180,17 @@
   <h3 id="detail-title"></h3>
   <dl id="detail-list" class="detail"></dl>
   <div class="dialog-actions"><button id="detail-close" class="text-button">Close</button></div>
+</dialog>
+
+<dialog id="lyrics-editor" class="dialog">
+  <form id="lyrics-form" method="dialog">
+    <h3 id="lyrics-title"></h3>
+    <textarea id="lyrics-text" aria-label="Lyrics" rows="12" placeholder="Paste lyrics here"></textarea>
+    <div class="dialog-actions">
+      <button type="button" id="lyrics-cancel" class="text-button">Cancel</button>
+      <button type="submit" class="text-button">Save</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="picker" class="dialog">

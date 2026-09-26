@@ -4,6 +4,7 @@ import { VERSION } from './version.mjs';
 const SHELL = `muu-shell-${VERSION}`;
 const AUDIO = 'muu-media-v1';
 const COVERS = 'muu-covers-v1';
+const LYRICS = 'muu-lyrics-v1';
 const FILES = ['/', '/index.html', '/styles.css', '/theme.css', '/app.mjs', '/player.mjs', '/storage.mjs', '/downloads.mjs', '/library.mjs', '/playlists.mjs', '/popover.mjs', '/drag.mjs', '/sheet.mjs', '/range.mjs', '/icons.mjs', '/version.mjs', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 // 新版はインストールが済んだら待たずに引き継ぐ。ページ側は制御が移ったのを見て読み込み直す。
@@ -23,6 +24,8 @@ self.addEventListener('fetch', event => {
     event.respondWith(caches.open(COVERS).then(async cache => (await cache.match(url.pathname)) || fetch(event.request)));
     return;
   }
+  // 歌詞はネットワーク優先（管理者が直した歌詞を拾う）。通信できなければ Cache。
+  if (url.pathname.startsWith('/lyrics/')) { event.respondWith(lyrics(event.request)); return; }
   if (url.pathname.startsWith('/api/') || url.pathname === '/version.json') return;
   if (event.request.mode === 'navigate') {
     event.respondWith(caches.open(SHELL).then(async cache => (await cache.match('/')) || fetch(event.request)));
@@ -32,6 +35,21 @@ self.addEventListener('fetch', event => {
     event.respondWith(caches.open(SHELL).then(async cache => (await cache.match(url.pathname)) || fetch(event.request)));
   }
 });
+
+async function lyrics(request) {
+  const cache = await caches.open(LYRICS);
+  const path = new URL(request.url).pathname;
+  try {
+    const response = await fetch(request);
+    // 曲が保存済みなら歌詞も端末に置く。後から登録された歌詞も、一度見れば通信なしで読める。
+    const wanted = (await cache.match(path)) || (await (await caches.open(AUDIO)).match(path.replace('/lyrics/', '/media/')));
+    if (response.ok && wanted) await cache.put(path, response.clone());
+    else if (response.status === 404) await cache.delete(path);
+    return response;
+  } catch {
+    return (await cache.match(path)) || new Response('Not saved', { status: 503 });
+  }
+}
 
 // 保存済みなら Cache から Range 付きで返す。無ければネットワーク（R2 が Range を返す）。
 async function media(request) {

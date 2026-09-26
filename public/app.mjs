@@ -1,11 +1,11 @@
-import { readState, writeState, savedTracks, removeSaved, clearSaved, estimate, AUDIO_CACHE, COVER_CACHE } from './storage.mjs';
+import { readState, writeState, savedTracks, removeSaved, clearSaved, estimate, AUDIO_CACHE, COVER_CACHE, LYRICS_CACHE } from './storage.mjs';
 import { saveTrack } from './downloads.mjs';
 import { Player } from './player.mjs';
 import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, groupUploads, groupByFolder, tracksLabel } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -113,6 +113,8 @@ function renderPlayer() {
   const image = $('sheet-cover');
   if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; image.classList.add('placeholder'); }; }
   image.classList.toggle('placeholder', !coverURL(track));
+  if ($('sheet-art').dataset.track !== track.id) { $('sheet-art').dataset.track = track.id; showLyrics(false); }
+  $('sheet-art').classList.toggle('no-lyrics', !track.lyrics);
   const control = saveControl({ saved: saved.has(track.id), saving: savingID === track.id, gone: track.gone, playing: !paused });
   const sheetSave = $('sheet-save');
   sheetSave.className = `icon${control.saved ? ' on' : ''}${control.busy ? ' busy' : ''}`;
@@ -243,11 +245,67 @@ async function shareTrack(track) {
 }
 function showDetails(track) {
   $('detail-title').textContent = track.title;
-  const rows = [['Folder', track.folder], ['Length', track.duration ? time(track.duration) : '-'], ['Size', megabytes(track.size)], ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : '-'], ['Saved', saved.has(track.id) ? 'Yes' : 'No'], ['Cloud', track.gone ? 'Removed' : 'Available'], ['File', track.id]];
+  const rows = [['Folder', track.folder], ['Length', track.duration ? time(track.duration) : '-'], ['Size', megabytes(track.size)], ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : '-'], ['Lyrics', track.lyrics ? 'Yes' : 'No'], ['Saved', saved.has(track.id) ? 'Yes' : 'No'], ['Cloud', track.gone ? 'Removed' : 'Available'], ['File', track.id]];
   $('detail-list').replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; return [dt, dd]; }));
   $('detail').showModal();
 }
 $('detail-close').onclick = () => $('detail').close();
+
+// ---- 歌詞 ----
+// 読むのは再生画面のカバー枠。タップで歌詞、もう一度で戻る。歌詞が無い曲は何も起きない。
+// 保存済みの曲は Service Worker が Cache から返すので、通信なしでも読める。
+let lyricsRequest = 0;
+async function loadLyrics(track) {
+  const r = await fetch(lyricsURL(track));
+  if (r.status === 404) return '';
+  if (!r.ok) throw new Error(`Lyrics unavailable (${r.status})`);
+  return (await r.text()).trim();
+}
+async function showLyrics(on) {
+  const art = $('sheet-art'), pre = $('sheet-lyrics'), image = $('sheet-cover');
+  const track = player.track;
+  const request = ++lyricsRequest;
+  if (!on || !track) { pre.hidden = true; image.hidden = false; art.setAttribute('aria-pressed', 'false'); art.setAttribute('aria-label', 'Show lyrics'); return; }
+  let text = '';
+  try { text = await loadLyrics(track); } catch (error) { toast(navigator.onLine ? error.message : 'Lyrics not saved on this device'); return; }
+  if (request !== lyricsRequest || player.track?.id !== track.id) return;
+  if (!text) { toast('No lyrics'); return; }
+  pre.textContent = text; pre.scrollTop = 0; pre.classList.add('at-top');
+  pre.hidden = false; image.hidden = true;
+  art.setAttribute('aria-pressed', 'true'); art.setAttribute('aria-label', 'Show cover');
+}
+{
+  // 引いて閉じる操作と区別する。動かずに離したときだけ切り替える。
+  const art = $('sheet-art'), pre = $('sheet-lyrics');
+  let down;
+  art.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+  art.addEventListener('click', e => {
+    if (down && (Math.abs(e.clientX - down.x) > 8 || Math.abs(e.clientY - down.y) > 8)) return;
+    if (art.classList.contains('no-lyrics')) return;
+    showLyrics(pre.hidden);
+  });
+  art.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); art.click(); } });
+  pre.addEventListener('scroll', () => pre.classList.toggle('at-top', pre.scrollTop <= 0), { passive: true });
+}
+// 書くのは管理者だけ。設定画面の曲ごとの Lyrics ボタンから。空にして保存すると消える。
+async function putLyrics(track, text) {
+  const r = await fetch(`/api/lyrics/${encodeURIComponent(track.id)}`, { method: 'PUT', body: text, headers: { ...authHeaders(), 'content-type': 'text/plain; charset=utf-8' } });
+  if (r.status === 201 || r.status === 204) await (await caches.open(LYRICS_CACHE)).delete(lyricsURL(track));
+  return r.status;
+}
+function editLyrics(track) {
+  return new Promise(resolve => {
+    const dialog = $('lyrics-editor'), form = $('lyrics-form'), input = $('lyrics-text');
+    $('lyrics-title').textContent = track.title;
+    input.value = ''; input.disabled = true; input.placeholder = 'Loading…';
+    loadLyrics(track).then(text => { input.value = text; }).catch(() => toast('Could not load lyrics')).finally(() => { input.disabled = false; input.placeholder = 'Paste lyrics here'; input.focus(); });
+    const finish = value => { dialog.close(); resolve(value); };
+    form.onsubmit = e => { e.preventDefault(); finish(input.value); };
+    $('lyrics-cancel').onclick = () => finish(null);
+    dialog.oncancel = e => { e.preventDefault(); finish(null); };
+    dialog.showModal();
+  });
+}
 
 // 長押しで複数選択に入る。動いたらスクロール、離したら通常のタップ。
 function longPress(element, run) {
@@ -543,13 +601,21 @@ function renderAdmin() {
       const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
       const meta = document.createElement('span'); meta.className = 'track-meta'; meta.textContent = `${time(track.duration)} · ${megabytes(track.size)}`;
       info.append(title, meta);
+      const lyrics = document.createElement('button'); lyrics.className = `icon${track.lyrics ? ' on' : ''}`; lyrics.innerHTML = icon('lyrics'); lyrics.setAttribute('aria-label', `${track.lyrics ? 'Edit' : 'Add'} lyrics for ${track.title}`);
+      lyrics.onclick = async () => {
+        const text = await editLyrics(track);
+        if (text === null) return;
+        const status = await putLyrics(track, text);
+        if (status === 201) toast('Lyrics saved'); else if (status === 204) toast('Lyrics removed'); else { toast(`Save failed (${status})`); return; }
+        await refresh(true);
+      };
       const remove = document.createElement('button'); remove.className = 'icon'; remove.innerHTML = icon('delete'); remove.setAttribute('aria-label', `Delete ${track.title} from cloud`);
       remove.onclick = async () => {
         if (!(await confirm(`Delete "${track.title}" from the cloud for everyone?`, { ok: 'Delete' }))) return;
         const r = await fetch(`/api/tracks/${encodeURIComponent(track.id)}`, { method: 'DELETE', headers: authHeaders() });
         if (r.status === 204) { toast('Deleted'); await refresh(true); } else toast(`Delete failed (${r.status})`);
       };
-      row.append(info, remove); return row;
+      row.append(info, lyrics, remove); return row;
     }));
     details.append(summary, list);
     return details;
@@ -569,15 +635,16 @@ async function putCover(folder, file) {
   if (r.status === 201) await (await caches.open(COVER_CACHE)).delete(`/covers/${encodeURIComponent(folder)}`);
   return r.status;
 }
-// まとめてアップロード。jobs = [{ folder, files, cover }]。1 つずつ順に送り、既存は飛ばし、満杯なら止める。
+// まとめてアップロード。jobs = [{ folder, files, cover, lyrics }]。1 つずつ順に送り、既存は飛ばし、満杯なら止める。
+// 歌詞（.txt）は曲の後に送る。同名の曲が無ければ 404 で、失敗に数える。
 let uploading = false;
 async function uploadJobs(jobs) {
   if (uploading) { toast('Upload in progress'); return; }
   uploading = true;
   const total = jobs.reduce((sum, job) => sum + job.files.length, 0);
-  let done = 0, exists = 0, failed = 0, index = 0;
+  let done = 0, exists = 0, failed = 0, index = 0, words = 0;
   try {
-    for (const { folder, files, cover } of jobs) {
+    for (const { folder, files, cover, lyrics = [] } of jobs) {
       if (cover && (await putCover(folder, cover)) !== 201) failed++;
       for (const file of files) {
         $('upload-status').textContent = `${++index} / ${total} · ${folder} / ${file.name}`;
@@ -590,12 +657,18 @@ async function uploadJobs(jobs) {
         else if (r.status === 507) { toast('Cloud storage is full'); return; }
         else { failed++; toast(`Upload failed (${r.status}): ${file.name}`); }
       }
+      for (const { file, id } of lyrics) {
+        $('upload-status').textContent = `${folder} / ${file.name}`;
+        const status = await putLyrics({ id }, await file.text());
+        if (status === 201 || status === 204) words++;
+        else { failed++; toast(status === 404 ? `No track for ${file.name}` : `Upload failed (${status}): ${file.name}`); }
+      }
     }
   } finally {
     uploading = false; $('upload-status').textContent = '';
-    const parts = [done && `Uploaded ${done}`, exists && `${exists} already there`, failed && `${failed} failed`].filter(Boolean);
+    const parts = [done && `Uploaded ${done}`, words && `${words} lyrics`, exists && `${exists} already there`, failed && `${failed} failed`].filter(Boolean);
     if (parts.length) toast(parts.join(' · '));
-    if (done || jobs.some(job => job.cover)) await refresh(true);
+    if (done || words || jobs.some(job => job.cover)) await refresh(true);
   }
 }
 // ファイル選択（フォルダ名は入力欄）。
@@ -604,6 +677,12 @@ $('upload-files').onchange = () => {
   const files = [...$('upload-files').files].filter(file => isMP3(file.name)); $('upload-files').value = '';
   if (!folder) { toast('Enter a folder name'); return; }
   if (files.length) uploadJobs([{ folder, files }]);
+};
+$('upload-lyrics').onchange = () => {
+  const folder = $('upload-folder').value.trim();
+  const lyrics = [...$('upload-lyrics').files].filter(file => isText(file.name)).map(file => ({ file, id: lyricsTarget(folder, file.name) })); $('upload-lyrics').value = '';
+  if (!folder) { toast('Enter a folder name'); return; }
+  if (lyrics.length) uploadJobs([{ folder, files: [], lyrics }]);
 };
 $('upload-cover').onchange = async () => {
   const folder = $('upload-folder').value.trim(); const file = $('upload-cover').files[0]; $('upload-cover').value = '';
@@ -616,7 +695,7 @@ const uploadJobsFor = entries => groupUploads(entries, $('upload-folder').value.
 $('upload-dir').onchange = () => {
   const entries = [...$('upload-dir').files].map(file => ({ file, path: file.webkitRelativePath || file.name })); $('upload-dir').value = '';
   const jobs = uploadJobsFor(entries);
-  if (jobs.length) uploadJobs(jobs); else toast('No MP3 found');
+  if (jobs.length) uploadJobs(jobs); else toast('No MP3 or lyrics found');
 };
 async function readDropped(items) {
   const entries = [];
@@ -635,7 +714,7 @@ $('admin').addEventListener('dragleave', e => { if (!$('admin').contains(e.relat
 $('admin').addEventListener('drop', async e => {
   e.preventDefault(); $('admin').classList.remove('over');
   const jobs = uploadJobsFor(await readDropped([...e.dataTransfer.items]));
-  if (jobs.length) uploadJobs(jobs); else toast($('upload-folder').value.trim() ? 'No MP3 found' : 'Drop a folder, or enter a folder name');
+  if (jobs.length) uploadJobs(jobs); else toast($('upload-folder').value.trim() ? 'No MP3 or lyrics found' : 'Drop a folder, or enter a folder name');
 });
 
 // ---- 同期・更新 ----

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel, lyricsTarget } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
@@ -75,4 +75,8 @@ test('bulk upload groups files by their parent folder', () => {
   ], 'Inbox');
   assert.deepEqual(jobs.map(j => [j.folder, j.files.map(x => x.name), j.cover?.name]), [['Summer', ['a.mp3'], 'cover.jpg'], ['Winter', ['b.MP3'], undefined], ['Inbox', ['loose.mp3'], undefined]]);
   assert.deepEqual(groupUploads([{ file: f('loose.mp3'), path: 'loose.mp3' }], ''), []);
+  // 歌詞 .txt は同名の曲の key へ。上の Winter/notes.txt もそれ。
+  assert.deepEqual(jobs[1].lyrics.map(l => [l.file.name, l.id]), [['notes.txt', 'Winter/notes.mp3']]);
+  assert.deepEqual(groupUploads([{ file: f('only.txt'), path: 'Solo/only.txt' }]).map(j => [j.folder, j.files, j.lyrics.map(l => l.id)]), [['Solo', [], ['Solo/only.mp3']]]);
+  assert.equal(lyricsTarget('Album', 'My Song.TXT'), 'Album/My Song.mp3');
 });
