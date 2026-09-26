@@ -59,7 +59,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 - `library.mjs`：一覧の取得、IndexedDB への前回一覧保存、ソート、Home 表示。
 - `player.mjs`：`<audio>` 1 個、キュー、シャッフル、Media Session、前回状態の復元。otoport の player / queue をほぼ流用。
 - `storage.mjs`：Cache Storage の音声・カバー保存、索引、使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。
-- `playlists.mjs`：IndexedDB の `playlists`（id, name, folder, trackIds[], order）と `folders`。曲参照は R2 key。一覧に無い key はグレー表示。
+- `playlists.mjs`：IndexedDB の `playlists`（id, name, trackIds[]。配列順が表示順）。曲参照は R2 key。一覧に無い key はグレー表示。
 - `settings.mjs`：設定 UI、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT）、更新確認。
 - `sw.mjs`：アプリ本体は precache、`/media/*` は Cache Storage 優先・無ければネットワーク、`/api/*` はネットワークのみ。更新時に音声キャッシュへ触らない。
 - 状態管理はモジュール変数＋`CustomEvent`。フレームワークなし。
@@ -70,7 +70,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | --- | --- |
 | IndexedDB `library` | 前回一覧 JSON と etag |
 | IndexedDB `saved` | 保存済み key、サイズ、保存日時 |
-| IndexedDB `playlists` / `folders` | My Playlist |
+| IndexedDB `playlists` | My Playlist |
 | IndexedDB `state` | 現在曲、位置、キュー、シャッフル、設定、パスワード |
 | Cache `muu-app-v<ver>` | アプリ本体 |
 | Cache `muu-media` | 音声。key = `/media/<id>` |

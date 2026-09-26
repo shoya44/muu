@@ -9,7 +9,7 @@ const NAMES = [
   'more_horiz', 'download', 'download_done', 'progress_activity',
   'sort', 'folder', 'add', 'delete', 'close', 'keyboard_arrow_down',
   'drag_handle', 'playlist_add', 'playlist_play', 'info', 'upload',
-  'refresh', 'remove', 'warning', 'music_note', 'key', 'check', 'cloud_off',
+  'refresh', 'remove', 'warning', 'music_note', 'key', 'check', 'cloud_off', 'check_circle', 'radio_button_unchecked',
 ];
 
 const out = {};

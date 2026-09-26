@@ -14,7 +14,7 @@ let tracks = [], saved = new Map(), store = PL.emptyStore();
 let settings = { sort: 'new', autosave: false, resume: true, password: '' };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '';
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
-let activeKey, queueShape;
+let activeKey, queueShape, selecting = null;
 const known = new Set();
 
 // ---- 共通 UI ----
@@ -88,11 +88,13 @@ $('mini').addEventListener('pointermove', e => { if (swipe && e.pointerId === sw
 $('mini').addEventListener('pointerup', () => { swipe = undefined; });
 for (const button of document.querySelectorAll('[data-player]')) button.onclick = () => player[button.dataset.player]();
 $('shuffle').onclick = () => player.setShuffle(!player.shuffle);
-const seek = $('sheet-seek');
-seek.addEventListener('pointerdown', () => { seek.dataset.dragging = 'true'; });
-seek.addEventListener('input', () => { $('sheet-elapsed').textContent = time(Number(seek.value)); });
-seek.addEventListener('change', () => { player.seek(Number(seek.value)); seek.dataset.dragging = 'false'; });
-seek.addEventListener('pointerup', () => { seek.dataset.dragging = 'false'; });
+const seeks = [$('sheet-seek'), $('mini-seek')];
+for (const seek of seeks) {
+  seek.addEventListener('pointerdown', () => { seek.dataset.dragging = 'true'; });
+  seek.addEventListener('input', () => { $('sheet-elapsed').textContent = time(Number(seek.value)); seek.style.setProperty('--p', `${(Number(seek.value) / Number(seek.max)) * 100}%`); });
+  seek.addEventListener('change', () => { player.seek(Number(seek.value)); seek.dataset.dragging = 'false'; });
+  seek.addEventListener('pointerup', () => { seek.dataset.dragging = 'false'; });
+}
 
 function renderPlayer() {
   const track = player.track;
@@ -101,7 +103,8 @@ function renderPlayer() {
   if (!track) return;
   $('mini-title').textContent = $('now-title').textContent = track.title;
   const cover = coverURL(track) || '/icon-512.png';
-  for (const image of [$('mini-cover'), $('sheet-cover')]) if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; }; }
+  const image = $('sheet-cover');
+  if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/icon-512.png'; }; }
   const paused = player.audio.paused;
   for (const button of document.querySelectorAll('[data-player="toggle"]')) {
     const state = paused ? 'play_arrow' : 'pause';
@@ -110,10 +113,13 @@ function renderPlayer() {
   }
   const duration = Number.isFinite(player.audio.duration) ? player.audio.duration : track.duration;
   const position = player.pendingPosition || player.audio.currentTime || 0;
-  seek.max = duration || 1;
-  if (seek.dataset.dragging !== 'true') { seek.value = position; $('sheet-elapsed').textContent = time(position); }
+  for (const seek of seeks) {
+    seek.max = duration || 1;
+    if (seek.dataset.dragging !== 'true') seek.value = position;
+    seek.style.setProperty('--p', `${duration ? (Number(seek.value) / duration) * 100 : 0}%`);
+  }
+  if (seeks.every(seek => seek.dataset.dragging !== 'true')) $('sheet-elapsed').textContent = time(position);
   $('sheet-duration').textContent = time(duration);
-  $('mini-bar').style.width = duration ? `${(position / duration) * 100}%` : '0';
   $('now-subtitle').textContent = `${player.index + 1} / ${player.queue.length}${track.gone ? ' · offline copy' : ''}`;
   $('shuffle').setAttribute('aria-pressed', String(player.shuffle));
   $('shuffle').classList.toggle('on', player.shuffle);
@@ -148,9 +154,9 @@ function renderQueue() {
 makeSortable($('queue'), { itemSelector: 'li', handleSelector: '.track-handle', onMove: (from, to) => { player.moveItem(from, to); renderQueue(); } });
 
 // ---- 楽曲の行 ----
-function makeRow(track, { list, playlist } = {}) {
+function makeRow(track, { list, playlist, select } = {}) {
   const row = document.createElement('div');
-  row.className = `track${player.track?.id === track.id ? ' active' : ''}${track.gone ? ' gone' : ''}`;
+  row.className = `track${player.track?.id === track.id ? ' active' : ''}${track.gone ? ' gone' : ''}${select?.has(track.id) ? ' selected' : ''}`;
   row.dataset.id = track.id; row.setAttribute('role', 'listitem');
   const play = document.createElement('button'); play.className = 'track-play'; play.setAttribute('aria-label', `Play ${track.title}`);
   const info = document.createElement('span'); info.className = 'track-info';
@@ -159,10 +165,18 @@ function makeRow(track, { list, playlist } = {}) {
   meta.textContent = track.duration ? time(track.duration) : '--:--';
   info.append(title, meta); play.append(info);
   play.onclick = () => {
+    if (select) { toggleSelect(track.id); return; }
     const candidates = list.filter(item => playableNow(item) || item.id === track.id);
     player.start(candidates, track.id);
     if (navigator.onLine) void refresh();
   };
+  if (select) {
+    // 選択中は行全体が選ぶ操作。右端は選択の印だけ。
+    const check = document.createElement('span'); check.className = 'icon track-check'; check.innerHTML = icon(select.has(track.id) ? 'check_circle' : 'radio_button_unchecked');
+    row.append(play, check);
+    return row;
+  }
+  if (!playlist) longPress(play, () => startSelect(track.id));
   const control = saveControl({ saved: saved.has(track.id), saving: savingID === track.id, gone: track.gone, playing: player.track?.id === track.id && !player.audio.paused });
   const save = document.createElement('button');
   save.className = `track-save icon${control.saved ? ' on' : ''}${control.busy ? ' busy' : ''}`;
@@ -189,16 +203,38 @@ function showDetails(track) {
 }
 $('detail-close').onclick = () => $('detail').close();
 
+// 長押しで複数選択に入る。動いたらスクロール、離したら通常のタップ。
+function longPress(element, run) {
+  let timer, x, y;
+  const clear = () => clearTimeout(timer);
+  element.addEventListener('pointerdown', e => {
+    if (!e.isPrimary) return;
+    x = e.clientX; y = e.clientY;
+    timer = setTimeout(() => { element.dataset.held = '1'; run(); }, 400);
+  });
+  element.addEventListener('pointermove', e => { if (Math.abs(e.clientX - x) > 8 || Math.abs(e.clientY - y) > 8) clear(); });
+  element.addEventListener('pointerup', clear); element.addEventListener('pointercancel', clear);
+  element.addEventListener('click', e => { if (element.dataset.held) { delete element.dataset.held; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+}
+function startSelect(id) { selecting = new Set([id]); if (navigator.vibrate) navigator.vibrate(10); renderHome(); }
+function toggleSelect(id) { if (selecting.has(id)) selecting.delete(id); else selecting.add(id); renderHome(); }
+function endSelect() { selecting = null; renderHome(); }
+$('select-close').onclick = endSelect;
+$('select-all').onclick = () => { const all = homeTracks(); selecting = new Set(selecting.size === all.length ? [] : all.map(t => t.id)); renderHome(); };
+$('select-add').onclick = () => { if (selecting.size) pickPlaylist([...selecting], endSelect); };
+
 // ---- Home ----
 const homeTracks = () => arrange(tracks.filter(track => !track.gone), settings.sort);
 function renderHome() {
   const visible = homeTracks();
   $('sort-label').textContent = SORT_LABEL[settings.sort];
   $('home-empty').hidden = visible.length > 0;
-  $('tracks').replaceChildren(...visible.map(track => makeRow(track, { list: visible })));
+  $('select-bar').hidden = !selecting; $('home-bar').hidden = Boolean(selecting);
+  if (selecting) { $('select-count').textContent = `${selecting.size} selected`; $('select-add').disabled = !selecting.size; }
+  $('tracks').replaceChildren(...visible.map(track => makeRow(track, { list: visible, select: selecting })));
   const pending = visible.filter(track => !saved.has(track.id));
+  // ON = 全曲保存済み。途中の状態は OFF として見せ、次のタップで残りを保存する。
   $('save-all').checked = visible.length > 0 && !pending.length;
-  $('save-all').indeterminate = pending.length > 0 && pending.length < visible.length;
   $('save-all').disabled = downloading || !visible.length;
 }
 $('sort').onclick = () => { settings.sort = nextSort(settings.sort); persistSettings(); renderHome(); };
@@ -268,36 +304,13 @@ function renderPlaylists() {
     $('playlist-tracks').replaceChildren(...rows.map(track => makeRow(track, { list: rows, playlist })));
     return;
   }
-  const loose = store.playlists.filter(p => !p.folder);
-  const nodes = loose.map(cardFor);
-  for (const folder of store.folders) {
-    const group = document.createElement('div'); group.className = 'folder-group'; group.dataset.folder = folder.id;
-    const head = document.createElement('div'); head.className = 'folder-head';
-    head.innerHTML = icon('folder');
-    const name = document.createElement('span'); name.className = 'folder-name'; name.textContent = folder.name;
-    const menu = document.createElement('button'); menu.className = 'icon'; menu.innerHTML = icon('more_horiz'); menu.setAttribute('aria-label', 'Folder options');
-    menu.onclick = () => popover.open(menu, [
-      { icon: 'playlist_add', label: 'New playlist here', run: async () => { const n = await prompt('Playlist name'); if (n) { PL.createPlaylist(store, n, folder.id); persistStore(); renderPlaylists(); } } },
-      { icon: 'folder', label: 'Rename', run: async () => { const n = await prompt('Folder name', folder.name); if (n) { PL.rename(folder, n); persistStore(); renderPlaylists(); } } },
-      { icon: 'delete', label: 'Delete folder', danger: true, run: () => { PL.removeFolder(store, folder.id); persistStore(); renderPlaylists(); } },
-    ]);
-    head.append(name, menu);
-    const body = document.createElement('div'); body.className = 'folder-body cards'; body.dataset.folder = folder.id;
-    body.append(...store.playlists.filter(p => p.folder === folder.id).map(cardFor));
-    group.append(head, body); nodes.push(group);
-  }
-  $('playlist-cards').replaceChildren(...nodes);
-  $('playlists-empty').hidden = store.playlists.length > 0 || store.folders.length > 0;
-  for (const container of [$('playlist-cards'), ...$('playlist-cards').querySelectorAll('.folder-body')]) {
-    if (container.dataset.sortable) continue;
-    container.dataset.sortable = '1';
-    makeSortable(container, { itemSelector: '.card-item', onMove: () => {
-      const folder = container.dataset.folder || null;
-      PL.reorderPlaylists(store, folder, [...container.querySelectorAll('.card-item')].map(el => el.dataset.id));
-      persistStore();
-    } });
-  }
+  $('playlist-cards').replaceChildren(...store.playlists.map(cardFor));
+  $('playlists-empty').hidden = store.playlists.length > 0;
 }
+makeSortable($('playlist-cards'), { itemSelector: '.card-item', onMove: () => {
+  PL.reorder(store, [...$('playlist-cards').querySelectorAll('.card-item')].map(el => el.dataset.id));
+  persistStore();
+} });
 makeSortable($('playlist-tracks'), { itemSelector: '.track', handleSelector: '.track-handle', onMove: (from, to) => {
   const playlist = store.playlists.find(p => p.id === currentPlaylist);
   if (!playlist) return;
@@ -309,7 +322,6 @@ makeSortable($('playlist-tracks'), { itemSelector: '.track', handleSelector: '.t
 } });
 $('playlist-back').onclick = () => { currentPlaylist = null; renderPlaylists(); };
 $('playlist-new').onclick = async () => { const n = await prompt('Playlist name'); if (n) { PL.createPlaylist(store, n); persistStore(); renderPlaylists(); } };
-$('folder-new').onclick = async () => { const n = await prompt('Folder name'); if (n) { PL.createFolder(store, n); persistStore(); renderPlaylists(); } };
 $('playlist-menu').onclick = () => {
   const playlist = store.playlists.find(p => p.id === currentPlaylist);
   if (!playlist) return;
@@ -317,35 +329,24 @@ $('playlist-menu').onclick = () => {
   popover.open($('playlist-menu'), [
     { icon: 'play_arrow', label: 'Play all', disabled: !rows.length, run: () => { const c = rows.filter(playableNow); if (c.length) player.start(c, c[0].id); } },
     { icon: 'shuffle', label: 'Shuffle', disabled: !rows.length, run: () => { const c = rows.filter(playableNow); if (c.length) { player.setShuffle(true); player.start(c, c[Math.floor(Math.random() * c.length)].id); } } },
-    { icon: 'folder', label: 'Move to folder', disabled: !store.folders.length, run: () => moveToFolder(playlist) },
     { icon: 'queue_music', label: 'Rename', run: async () => { const n = await prompt('Playlist name', playlist.name); if (n) { PL.rename(playlist, n); persistStore(); renderPlaylists(); } } },
     { icon: 'delete', label: 'Delete playlist', danger: true, run: async () => { if (await confirm(`Delete "${playlist.name}"? Saved audio stays on this device.`, { ok: 'Delete' })) { PL.removePlaylist(store, playlist.id); currentPlaylist = null; persistStore(); renderPlaylists(); } } },
   ]);
 };
-function moveToFolder(playlist) {
-  $('picker-title').textContent = 'Move to folder';
-  $('picker-new').hidden = true;
-  const options = [{ id: null, name: 'No folder' }, ...store.folders];
-  $('picker-list').replaceChildren(...options.map(folder => {
-    const b = document.createElement('button'); b.innerHTML = icon('folder'); b.append(folder.name);
-    b.onclick = () => { playlist.folder = folder.id; persistStore(); $('picker').close(); renderPlaylists(); };
-    return b;
-  }));
-  $('picker').showModal();
-}
-function pickPlaylist(ids) {
-  $('picker-title').textContent = 'Add to playlist';
-  $('picker-new').hidden = false; $('picker-name').value = '';
+function pickPlaylist(ids, done = () => {}) {
+  $('picker-title').textContent = ids.length > 1 ? `Add ${ids.length} tracks to` : 'Add to playlist';
+  $('picker-name').value = '';
+  const finish = (playlist, added) => { persistStore(); $('picker').close(); toast(added ? `Added ${added} to ${playlist.name}` : 'Already in playlist'); if (openView === 'playlists') renderPlaylists(); done(); };
   $('picker-list').replaceChildren(...store.playlists.map(playlist => {
-    const b = document.createElement('button'); b.innerHTML = icon('queue_music'); b.append(playlist.name);
-    b.onclick = () => { const n = PL.addTracks(playlist, ids); persistStore(); $('picker').close(); toast(n ? `Added to ${playlist.name}` : 'Already in playlist'); if (openView === 'playlists') renderPlaylists(); };
+    const b = document.createElement('button'); b.innerHTML = icon('queue_music');
+    const name = document.createElement('span'); name.className = 'picker-name'; name.textContent = playlist.name; b.append(name);
+    b.onclick = () => finish(playlist, PL.addTracks(playlist, ids));
     return b;
   }));
   $('picker-new').onsubmit = event => {
     event.preventDefault();
     const name = $('picker-name').value.trim(); if (!name) return;
-    const playlist = PL.createPlaylist(store, name); PL.addTracks(playlist, ids); persistStore();
-    $('picker').close(); toast(`Added to ${playlist.name}`); if (openView === 'playlists') renderPlaylists();
+    const playlist = PL.createPlaylist(store, name); finish(playlist, PL.addTracks(playlist, ids));
   };
   $('picker').showModal();
 }
@@ -358,14 +359,27 @@ $('fab-add').onclick = () => {
   const playlist = store.playlists.find(p => p.id === currentPlaylist);
   if (!playlist) return;
   const visible = homeTracks();
-  $('chooser-list').replaceChildren(...visible.map(track => {
-    const label = document.createElement('label'); const box = document.createElement('input'); box.type = 'checkbox'; box.value = track.id;
-    const inside = playlist.trackIds.includes(track.id); box.checked = inside; box.disabled = inside; label.classList.toggle('in', inside);
-    const span = document.createElement('span'); span.textContent = track.title; label.append(box, span); return label;
-  }));
+  const picked = new Set();
+  const draw = () => {
+    $('chooser-count').textContent = picked.size ? `${picked.size} selected` : 'Add tracks';
+    $('chooser-ok').disabled = !picked.size;
+    $('chooser-list').replaceChildren(...visible.map(track => {
+      const inside = playlist.trackIds.includes(track.id);
+      const row = document.createElement('div'); row.className = `track${inside ? ' in' : picked.has(track.id) ? ' selected' : ''}`; row.dataset.id = track.id;
+      const button = document.createElement('button'); button.className = 'track-play'; button.disabled = inside;
+      button.setAttribute('aria-label', inside ? `${track.title} already added` : `Select ${track.title}`);
+      const info = document.createElement('span'); info.className = 'track-info';
+      const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
+      const meta = document.createElement('span'); meta.className = 'track-meta'; meta.textContent = time(track.duration);
+      info.append(title, meta); button.append(info);
+      button.onclick = () => { if (picked.has(track.id)) picked.delete(track.id); else picked.add(track.id); draw(); };
+      const check = document.createElement('span'); check.className = 'icon track-check'; check.innerHTML = icon(inside ? 'check' : picked.has(track.id) ? 'check_circle' : 'radio_button_unchecked');
+      row.append(button, check); return row;
+    }));
+  };
+  draw();
   $('chooser-ok').onclick = () => {
-    const ids = [...$('chooser-list').querySelectorAll('input:checked:not(:disabled)')].map(i => i.value);
-    const n = PL.addTracks(playlist, ids); persistStore(); $('chooser').close(); renderPlaylists(); if (n) toast(`Added ${n}`);
+    const n = PL.addTracks(playlist, [...picked]); persistStore(); $('chooser').close(); renderPlaylists(); if (n) toast(`Added ${n}`);
   };
   $('chooser').showModal();
 };

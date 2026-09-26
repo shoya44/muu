@@ -35,17 +35,16 @@ test('file names', () => {
   assert.equal(time(125), '2:05');
 });
 
-test('playlists: folders, order, resolve', () => {
+test('playlists: order, resolve, normalise', () => {
   const store = PL.emptyStore();
-  const folder = PL.createFolder(store, 'Trips');
-  const p1 = PL.createPlaylist(store, 'One'); const p2 = PL.createPlaylist(store, 'Two', folder.id);
+  const p1 = PL.createPlaylist(store, 'One'); const p2 = PL.createPlaylist(store, 'Two');
   assert.equal(PL.addTracks(p1, ['x/1.mp3', 'x/2.mp3', 'x/1.mp3']), 2);
   PL.moveTrack(p1, 0, 1);
   assert.deepEqual(p1.trackIds, ['x/2.mp3', 'x/1.mp3']);
-  PL.removeFolder(store, folder.id);
-  assert.equal(p2.folder, null);
+  PL.reorder(store, [p2.id, p1.id]);
+  assert.deepEqual(store.playlists.map(p => p.id), [p2.id, p1.id]);
   const rows = PL.resolveTracks(p1, id => (id === 'x/1.mp3' ? { id, title: 'One' } : null), new Map([['x/2.mp3', 5]]));
   assert.deepEqual(rows.map(r => [r.id, Boolean(r.gone)]), [['x/2.mp3', true], ['x/1.mp3', false]]);
   const clean = PL.normalise({ folders: [{ id: 'z' }], playlists: [{ id: 'q', name: 'Q', folder: 'missing', trackIds: ['a', 'a', 3] }] });
-  assert.deepEqual(clean, { folders: [], playlists: [{ id: 'q', name: 'Q', folder: null, trackIds: ['a'] }] });
+  assert.deepEqual(clean, { playlists: [{ id: 'q', name: 'Q', trackIds: ['a'] }] });
 });

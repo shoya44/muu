@@ -58,8 +58,10 @@
   --md-sys-typescale-title-large-size: 22px;
 
   /* Layout */
-  --muu-nav-height: 64px;
-  --muu-mini-height: 60px;
+  --muu-nav-height: 60px;
+  /* ホームバー分の余白は OS が既に空けているので、フッターはその中へ少し食い込ませる。 */
+  --muu-nav-inset: max(0px, calc(env(safe-area-inset-bottom) - 12px));
+  --muu-mini-height: 66px;
   --muu-touch: 48px;
 }
 ::backdrop { --md-sys-color-scrim: #000a; }

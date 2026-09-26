@@ -20,7 +20,13 @@
 
 <main>
   <section id="view-home" class="view" data-view="home">
-    <div class="toolbar">
+    <div id="select-bar" class="toolbar select-bar" hidden>
+      <button id="select-close" class="icon" aria-label="Cancel selection"><span data-icon="close"></span></button>
+      <span id="select-count" class="title"></span>
+      <button id="select-all" class="icon" aria-label="Select all"><span data-icon="check"></span></button>
+      <button id="select-add" class="icon" aria-label="Add to playlist"><span data-icon="playlist_add"></span></button>
+    </div>
+    <div id="home-bar" class="toolbar">
       <label class="toggle" title="Save all">
         <input id="save-all" type="checkbox" aria-label="Save all tracks">
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -37,7 +43,6 @@
   <section id="view-playlists" class="view" data-view="playlists" hidden>
     <div id="playlists-root">
       <div class="toolbar">
-        <button id="folder-new" class="chip" aria-label="New folder"><span data-icon="folder"></span><span data-icon="add"></span></button>
         <span class="spacer"></span>
         <button id="playlist-new" class="chip" aria-label="New playlist"><span data-icon="playlist_add"></span></button>
       </div>
@@ -99,19 +104,17 @@
 </main>
 
 <div id="mini" class="mini" hidden>
-  <div class="mini-progress"><span id="mini-bar"></span></div>
-  <button id="mini-open" class="mini-open" aria-label="Open player">
-    <img id="mini-cover" class="mini-cover" alt="" src="/icon-192.png">
-    <span id="mini-title" class="mini-title"></span>
-  </button>
+  <button id="mini-open" class="mini-open" aria-label="Open player"><span id="mini-title" class="mini-title"></span></button>
+  <button class="icon" data-player="previous" aria-label="Previous"><span data-icon="skip_previous"></span></button>
   <button class="icon" data-player="toggle" aria-label="Play"></button>
   <button class="icon" data-player="next" aria-label="Next"><span data-icon="skip_next"></span></button>
+  <input id="mini-seek" class="mini-seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Seek">
 </div>
 
 <nav class="navbar" aria-label="Main">
-  <button class="nav-item on" data-nav="home" aria-label="Home"><span data-icon="home"></span><span class="nav-label">Home</span></button>
-  <button class="nav-item" data-nav="playlists" aria-label="Playlists"><span data-icon="library_music"></span><span class="nav-label">Playlists</span></button>
-  <button class="nav-item" data-nav="settings" aria-label="Settings"><span data-icon="settings"></span><span class="nav-label">Settings</span></button>
+  <button class="nav-item on" data-nav="home" aria-label="All Songs"><span data-icon="music_note"></span></button>
+  <button class="nav-item" data-nav="playlists" aria-label="Playlists"><span data-icon="library_music"></span></button>
+  <button class="nav-item" data-nav="settings" aria-label="Settings"><span data-icon="settings"></span></button>
 </nav>
 
 <dialog id="now" class="sheet" aria-label="Now playing">
@@ -175,13 +178,13 @@
   </form>
 </dialog>
 
-<dialog id="chooser" class="dialog">
-  <h3>Add tracks</h3>
-  <div id="chooser-list" class="chooser"></div>
-  <div class="dialog-actions">
-    <button id="chooser-cancel" class="text-button">Cancel</button>
+<dialog id="chooser" class="chooser-sheet" aria-label="Add tracks">
+  <div class="toolbar">
+    <button id="chooser-cancel" class="icon" aria-label="Close"><span data-icon="close"></span></button>
+    <span id="chooser-count" class="title">Add tracks</span>
     <button id="chooser-ok" class="text-button">Add</button>
   </div>
+  <div id="chooser-list" class="chooser tracks" role="list"></div>
 </dialog>
 
 <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-action" class="text-button" hidden></button></div>

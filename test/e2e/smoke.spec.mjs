@@ -70,7 +70,7 @@ test('playlist survives reload', async ({ page }) => {
   await page.locator('#prompt-form button[type=submit]').click();
   await page.getByRole('button', { name: /Road/ }).click();
   await page.getByRole('button', { name: 'Add tracks' }).click();
-  await page.locator('#chooser-list input').first().check();
+  await page.locator('#chooser-list .track-play:not(:disabled)').first().click();
   await page.locator('#chooser-ok').click();
   await expect(page.locator('#playlist-tracks .track')).toHaveCount(1);
   // IndexedDB への書き込み完了を待ってから再読み込みする。
