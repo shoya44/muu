@@ -2,6 +2,10 @@
 
 更新：2026-09-26。
 
+## 公開 URL
+
+https://muu.take503503.workers.dev （main への push で自動デプロイ）
+
 ## 前提
 
 - Node.js 24.19.0（`engines` で固定）。npm 11。
