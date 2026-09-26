@@ -66,15 +66,19 @@ export class Player {
     if (this.shuffle) this.applyOrder();
     this.load(true);
   }
-  // シャッフルは現在曲を維持し、未再生部分だけを並べ替える。
+  // シャッフル ON は現在曲を先頭にして、残り全部（再生済みも含む）を並べ替える。
+  // OFF は元の並び（order）に戻し、現在曲はそのまま。
   applyOrder() {
-    const upcoming = this.queue.slice(this.index + 1);
+    const current = this.item;
     if (this.shuffle) {
-      for (let i = upcoming.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [upcoming[i], upcoming[j]] = [upcoming[j], upcoming[i]]; }
+      const rest = this.queue.filter(item => item !== current);
+      for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
+      this.queue = current ? [current, ...rest] : rest;
     } else {
-      upcoming.sort((a, b) => this.order.indexOf(a.key) - this.order.indexOf(b.key));
+      this.queue = [...this.queue].sort((a, b) => this.order.indexOf(a.key) - this.order.indexOf(b.key));
     }
-    this.queue = [...this.queue.slice(0, this.index + 1), ...upcoming];
+    this.index = current ? this.queue.indexOf(current) : -1;
+    this.history = [];
     this.changed(); this.save();
   }
   setShuffle(value) { this.shuffle = value; this.applyOrder(); }
