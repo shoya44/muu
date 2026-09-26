@@ -83,7 +83,7 @@ select { background: var(--md-sys-color-surface-container-high); color: inherit;
 .track-save.busy .material-icon { animation: spin 1.2s linear infinite; }
 .track-save:disabled { opacity: .3; }
 .track-menu { color: var(--md-sys-color-on-surface-variant); }
-.track-handle { color: var(--md-sys-color-outline); touch-action: none; cursor: grab; }
+.track-handle { color: var(--md-sys-color-outline); touch-action: none; cursor: grab; margin-left: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { text-align: center; color: var(--md-sys-color-on-surface-variant); padding: 48px 16px; line-height: 1.7; }
 
@@ -149,7 +149,7 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 .sheet .muted { text-align: center; }
 .queue { list-style: none; margin: 20px 0 0; padding: 0; }
 .queue { display: flex; flex-direction: column; gap: 4px; }
-.queue li { display: flex; align-items: center; min-height: 52px; border-radius: var(--md-sys-shape-corner-medium); position: relative; background: var(--md-sys-color-surface-container-low); }
+.queue li { display: flex; align-items: center; min-height: 52px; border-radius: var(--md-sys-shape-corner-medium); position: relative; background: var(--md-sys-color-surface-container-low); padding: 0 4px 0 8px; }
 .queue li.current { background: var(--md-sys-color-surface-container-high); }
 .queue li.dragging { background: var(--md-sys-color-surface-container-high); box-shadow: var(--muu-elevation); z-index: 2; }
 .queue-play { flex: 1; min-width: 0; justify-content: flex-start; text-align: left; gap: 12px; padding: 6px 8px; }
