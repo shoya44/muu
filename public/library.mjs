@@ -1,11 +1,12 @@
 // 一覧の整形と表示用の純粋関数。ブラウザなしで検証できる。
-export const SORTS = ['new', 'old', 'az', 'za', 'folder'];
-export const SORT_LABEL = { new: 'New', old: 'Old', az: 'A-Z', za: 'Z-A', folder: 'Folder' };
+// 標準はフォルダ表示。巡回は Folder → New → Old → A-Z → Z-A。
+export const SORTS = ['folder', 'new', 'old', 'az', 'za'];
+export const SORT_LABEL = { folder: 'Folder', new: 'New', old: 'Old', az: 'A-Z', za: 'Z-A' };
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 export function nextSort(sort) { return SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length]; }
 
-export function arrange(tracks, sort = 'new') {
+export function arrange(tracks, sort = 'folder') {
   const list = [...tracks];
   if (sort === 'az') return list.sort((a, b) => collator.compare(a.title, b.title));
   if (sort === 'za') return list.sort((a, b) => collator.compare(b.title, a.title));

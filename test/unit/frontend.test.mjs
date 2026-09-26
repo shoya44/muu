@@ -6,7 +6,7 @@ import * as PL from '../../public/playlists.mjs';
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
 
 test('sort cycles and orders', () => {
-  assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'folder'); assert.equal(nextSort('folder'), 'new');
+  assert.equal(nextSort('folder'), 'new'); assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'folder');
   const list = [t('a', 'Banana', '2'), t('b', 'apple', '3'), t('c', 'Cherry', '1')];
   assert.deepEqual(arrange(list, 'new').map(x => x.id), ['b', 'a', 'c']);
   assert.deepEqual(arrange(list, 'old').map(x => x.id), ['c', 'a', 'b']);

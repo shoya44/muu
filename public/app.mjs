@@ -11,7 +11,7 @@ import { VERSION, BUILT } from './version.mjs';
 
 const $ = id => document.getElementById(id);
 let tracks = [], saved = new Map(), store = PL.emptyStore();
-let settings = { sort: 'new', autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false }, collapsed: [] };
+let settings = { sort: 'folder', sortChosen: false, autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false }, collapsed: [] };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '', cloud = { used: 0, limit: 0 };
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
 let activeKey, queueShape, selecting = null;
@@ -309,7 +309,7 @@ function folderHead({ folder, tracks: members }, open) {
   head.append(toggle, play);
   return head;
 }
-$('sort').onclick = () => { settings.sort = nextSort(settings.sort); persistSettings(); renderHome(); };
+$('sort').onclick = () => { settings.sort = nextSort(settings.sort); settings.sortChosen = true; persistSettings(); renderHome(); };
 // 一覧をシャッフル再生。開始曲も無作為に選ぶ。
 function shufflePlay(list) {
   const candidates = list.filter(playableNow);
@@ -722,6 +722,8 @@ $('install-close').onclick = () => { $('install').hidden = true; settings.instal
 async function start() {
   const [library, savedSettings, playlists, playerState] = await Promise.all([readState('library'), readState('settings'), readState('playlists'), readState('player')]).catch(() => []);
   settings = { ...settings, ...(savedSettings || {}) };
+  // 自分でソートを変えたことが無い端末は、標準のフォルダ表示へ。
+  if (!settings.sortChosen) settings.sort = 'folder';
   store = PL.normalise(playlists);
   saved = await savedTracks();
   if (library?.tracks) { tracks = library.tracks; libraryEtag = library.etag || ''; for (const t of tracks) known.add(t.id); }
