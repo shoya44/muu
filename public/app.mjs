@@ -1,4 +1,4 @@
-import { readState, writeState, savedTracks, removeSaved, clearSaved, estimate, COVER_CACHE } from './storage.mjs';
+import { readState, writeState, savedTracks, removeSaved, clearSaved, estimate, AUDIO_CACHE, COVER_CACHE } from './storage.mjs';
 import { saveTrack } from './downloads.mjs';
 import { Player } from './player.mjs';
 import { icon } from './icons.mjs';
@@ -217,27 +217,28 @@ function trackMenu(track, playlist) {
     playlist && { icon: 'remove', label: 'Remove', danger: true, run: () => removeFromPlaylist(playlist, track) },
   ];
 }
-// 共有。読み取りは無認証なので、リンクは配信 URL そのもの。OS の共有シートがファイルを受けるなら本体を渡す（Files に保存、AirDrop）。
+// 共有。読み取りは無認証なので、リンクは配信 URL そのもの。
+// 端末に保存済みなら Cache から本体を渡す（Files に保存、AirDrop）。未保存ならリンク。
+// ネットワークから取ってから share を呼ぶと Safari はユーザー操作の期限切れで拒むので、取りに行かない。
 let sharing = false;
 async function shareTrack(track) {
   if (sharing) return;
   const url = new URL(mediaURL(track), location.href).href;
-  if (!navigator.share) {
-    try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast(url); }
-    return;
-  }
+  const copy = async () => { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast(url); } };
+  if (!navigator.share) { await copy(); return; }
   sharing = true;
   try {
     let data = { title: track.title, url };
-    if (navigator.canShare) {
-      try {
-        const file = new File([await (await fetch(mediaURL(track))).blob()], `${track.title}.mp3`, { type: 'audio/mpeg' });
+    if (navigator.canShare && saved.has(track.id)) {
+      const cached = await (await caches.open(AUDIO_CACHE)).match(mediaURL(track));
+      if (cached) {
+        const file = new File([await cached.blob()], safeFileName(track.title), { type: 'audio/mpeg' });
         if (navigator.canShare({ files: [file] })) data = { title: track.title, files: [file] };
-      } catch { /* 取れなければリンクで */ }
+      }
     }
     await navigator.share(data);
   } catch (error) {
-    if (error.name !== 'AbortError') { try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast("Couldn't share"); } }
+    if (error.name !== 'AbortError') await copy();
   } finally { sharing = false; }
 }
 function showDetails(track) {
@@ -630,7 +631,7 @@ async function readDropped(items) {
   return entries;
 }
 for (const type of ['dragenter', 'dragover']) $('admin').addEventListener(type, e => { e.preventDefault(); $('admin').classList.add('over'); });
-$('admin').addEventListener('dragleave', () => $('admin').classList.remove('over'));
+$('admin').addEventListener('dragleave', e => { if (!$('admin').contains(e.relatedTarget)) $('admin').classList.remove('over'); });
 $('admin').addEventListener('drop', async e => {
   e.preventDefault(); $('admin').classList.remove('over');
   const jobs = uploadJobsFor(await readDropped([...e.dataTransfer.items]));
