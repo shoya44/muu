@@ -145,6 +145,7 @@
     <div id="sheet-art" class="sheet-art" role="button" tabindex="0" aria-label="Show lyrics" aria-pressed="false">
       <img id="sheet-cover" class="sheet-cover" alt="" src="/cover-placeholder.svg">
       <pre id="sheet-lyrics" class="sheet-lyrics at-top" data-scrolls hidden></pre>
+      <button id="lyrics-expand" class="icon lyrics-expand" aria-label="Full screen lyrics" hidden><span data-icon="open_in_full"></span></button>
     </div>
     <h2 id="now-title" class="now-title"></h2>
     <p id="now-subtitle" class="muted"></p>
@@ -164,6 +165,20 @@
       <button id="repeat" class="icon" aria-label="Repeat" aria-pressed="false"><span data-icon="repeat"></span></button>
     </div>
   </div>
+</dialog>
+
+<!-- 歌詞の全画面。再生画面の歌詞枠の右下から開く。曲が変われば追従し、歌詞が無ければ閉じる。下にはミニプレイヤー。 -->
+<dialog id="lyrics-full" class="sheet lyrics-full" aria-label="Lyrics">
+  <div class="toolbar sheet-bar lyrics-full-bar">
+    <button id="lyrics-full-close" class="icon" aria-label="Close"><span data-icon="keyboard_arrow_down"></span></button>
+    <div class="lyrics-full-heading">
+      <span id="lyrics-full-title" class="title"></span>
+      <span id="lyrics-full-subtitle" class="muted"></span>
+    </div>
+  </div>
+  <pre id="lyrics-full-text" class="lyrics-full-text" tabindex="-1"></pre>
+  <!-- 開いている間は #mini をここへ移し、閉じたら元へ戻す。同じミニプレイヤーが下に出る。 -->
+  <div id="lyrics-full-mini" class="lyrics-full-mini"></div>
 </dialog>
 
 <div id="popover" class="popover" role="menu" hidden></div>

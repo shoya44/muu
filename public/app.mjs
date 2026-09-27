@@ -113,7 +113,7 @@ function renderPlayer() {
   const image = $('sheet-cover');
   if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/cover-placeholder.svg'; image.classList.add('placeholder'); }; }
   image.classList.toggle('placeholder', !coverURL(track));
-  if ($('sheet-art').dataset.track !== track.id) { $('sheet-art').dataset.track = track.id; showLyrics(false); }
+  if ($('sheet-art').dataset.track !== track.id) { $('sheet-art').dataset.track = track.id; showLyrics(false); if ($('lyrics-full').open) showFullLyrics(); }
   $('sheet-art').classList.toggle('no-lyrics', !track.lyrics);
   const control = saveControl({ saved: saved.has(track.id), saving: savingID === track.id, gone: track.gone, playing: !paused });
   const sheetSave = $('sheet-save');
@@ -265,15 +265,34 @@ async function showLyrics(on) {
   const art = $('sheet-art'), pre = $('sheet-lyrics'), image = $('sheet-cover');
   const track = player.track;
   const request = ++lyricsRequest;
+  $('lyrics-expand').hidden = true;
   if (!on || !track) { pre.hidden = true; image.hidden = false; art.setAttribute('aria-pressed', 'false'); art.setAttribute('aria-label', 'Show lyrics'); return; }
   let text = '';
   try { text = await loadLyrics(track); } catch (error) { toast(navigator.onLine ? error.message : 'Lyrics not saved on this device'); return; }
   if (request !== lyricsRequest || player.track?.id !== track.id) return;
   if (!text) { toast('No lyrics'); return; }
   pre.textContent = text; pre.scrollTop = 0; pre.classList.add('at-top');
-  pre.hidden = false; image.hidden = true;
+  pre.hidden = false; image.hidden = true; $('lyrics-expand').hidden = false;
   art.setAttribute('aria-pressed', 'true'); art.setAttribute('aria-label', 'Show cover');
 }
+// 全画面。開いている間に曲が変われば新しい歌詞に差し替え、無ければ閉じる。
+let fullRequest = 0;
+async function showFullLyrics() {
+  const dialog = $('lyrics-full'), track = player.track;
+  const request = ++fullRequest;
+  if (!track) { dialog.close(); return; }
+  $('lyrics-full-title').textContent = track.title;
+  $('lyrics-full-subtitle').textContent = track.folder;
+  let text = '';
+  try { text = await loadLyrics(track); } catch { text = ''; }
+  if (request !== fullRequest) return;
+  if (!text) { if (dialog.open) { dialog.close(); toast('No lyrics'); } return; }
+  $('lyrics-full-text').textContent = text; $('lyrics-full-text').scrollTop = 0;
+  if (!dialog.open) { $('lyrics-full-mini').append($('mini')); dialog.showModal(); $('lyrics-full-text').focus({ preventScroll: true }); }
+}
+$('lyrics-full').addEventListener('close', () => document.body.insertBefore($('mini'), document.querySelector('nav.navbar')));
+$('lyrics-expand').onclick = e => { e.stopPropagation(); showFullLyrics(); };
+$('lyrics-full-close').onclick = () => $('lyrics-full').close();
 {
   // 引いて閉じる操作と区別する。動かずに離したときだけ切り替える。
   const art = $('sheet-art'), pre = $('sheet-lyrics');
@@ -284,7 +303,7 @@ async function showLyrics(on) {
     if (art.classList.contains('no-lyrics')) return;
     showLyrics(pre.hidden);
   });
-  art.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); art.click(); } });
+  art.addEventListener('keydown', e => { if (e.target === art && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); art.click(); } });
   pre.addEventListener('scroll', () => pre.classList.toggle('at-top', pre.scrollTop <= 0), { passive: true });
 }
 // 書くのは管理者だけ。設定画面の曲ごとの Lyrics ボタンから。空にして保存すると消える。

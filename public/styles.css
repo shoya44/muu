@@ -171,6 +171,16 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 .sheet-art .sheet-cover { margin-bottom: 20px; }
 .sheet-lyrics { width: min(80vw, 360px, calc(100vh - 420px)); aspect-ratio: 1; box-sizing: border-box; margin: 0 auto 20px; padding: 16px; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container); box-shadow: var(--muu-elevation); font: inherit; font-size: var(--md-sys-typescale-body-large-size); line-height: 1.7; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .sheet-lyrics::after { content: ''; display: block; height: 32px; }
+.sheet-art { position: relative; }
+.lyrics-expand { position: absolute; right: calc((100% - min(80vw, 360px, calc(100vh - 420px))) / 2 + 4px); bottom: 24px; background: var(--md-sys-color-surface-container-high); }
+/* 歌詞の全画面。上に閉じると曲名、真ん中に大きめの本文、下に前 / 再生 / 次。 */
+.lyrics-full-bar { padding-top: calc(8px + env(safe-area-inset-top)); }
+.lyrics-full-heading { display: flex; flex-direction: column; min-width: 0; }
+.lyrics-full-heading .title { font-size: var(--md-sys-typescale-title-medium-size); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lyrics-full-heading .muted { text-align: left; font-size: var(--md-sys-typescale-body-medium-size); }
+.lyrics-full-text { flex: 1; margin: 0; padding: 8px 24px 40px; overflow-y: auto; overscroll-behavior: contain; outline: none; font: inherit; font-size: var(--md-sys-typescale-title-medium-size); line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.lyrics-full-mini { padding: 8px 10px calc(12px + env(safe-area-inset-bottom)); }
+.lyrics-full-mini .mini { position: static; transform: none; width: 100%; }
 .sheet-lyrics { touch-action: pan-y; }
 .sheet-lyrics.at-top { touch-action: pan-up; }
 .now-title { font-size: var(--md-sys-typescale-title-large-size); margin: 0; text-align: center; font-weight: 600; overflow-wrap: anywhere; }
