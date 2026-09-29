@@ -5,7 +5,7 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, shownSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey, playsLabel } from './library.mjs';
+import { arrange, nextSort, SORTS, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { loadPlays, recordPlay, flushPlays, unsent, followMoves as followPlayMoves } from './plays.mjs';
 import { VERSION, BUILT } from './version.mjs';
@@ -82,28 +82,18 @@ for (const button of document.querySelectorAll('.nav-item')) button.onclick = ()
 
 // ---- プレイヤー ----
 const player = new Player($('audio'), { changed: renderPlayer, message: toast, persist: state => writeState('player', state).catch(() => {}), played: track => countPlay(track) });
-// 再生数。数えて送るのは全端末。見られるのはパスワードを入れた管理者の端末だけ（/api/stats）。
-// 見せる数はサーバーの合計に、この端末でまだ届いていない回数を足したもの。
-let stats = {};
-const admin = () => Boolean(settings.password);
-const playsOf = track => (admin() ? (stats[track.id] || 0) + unsent(track.id) : 0);
+// 再生数。全端末が数えて送り、見るのは Details だけ（誰でも）。
+// 回数は Details を開いたときに /api/stats から取る。見せる数はサーバーの合計に、この端末でまだ届いていない回数を足したもの。
+let stats = null;
+const playsOf = track => (stats?.[track.id] || 0) + unsent(track.id);
 async function loadStats() {
-  if (!admin()) return;
   try {
-    const r = await fetch('/api/stats', { headers: authHeaders(), cache: 'no-store' });
-    if (!r.ok) return;
-    stats = (await r.json()).plays || {};
-    writeState('stats', stats).catch(() => {});
-    renderAll();
-  } catch { /* オフライン: 前回の回数のまま */ }
+    const r = await fetch('/api/stats', { cache: 'no-store' });
+    if (r.ok) stats = (await r.json()).plays || {};
+  } catch { /* オフライン: 前回取った回数のまま（無ければ出さない） */ }
 }
-async function countPlay(track) {
-  await recordPlay(track.id);
-  if (admin()) renderAll();
-  void sendPlays();
-}
-// 送れたら管理者の端末は回数を取り直す。
-async function sendPlays() { if (navigator.onLine && (await flushPlays())) await loadStats(); }
+async function countPlay(track) { await recordPlay(track.id); void sendPlays(); }
+function sendPlays() { if (navigator.onLine) void flushPlays(); }
 const sheet = setupSheet($('now'), { opening: renderQueue });
 // 歌詞の全画面から開くときは、全画面を閉じてその下の再生画面へ戻る。
 const openPlayer = () => { if ($('lyrics-full').open) $('lyrics-full').close(); sheet.open(); };
@@ -205,8 +195,7 @@ function makeRow(track, { list, playlist, select, grouped } = {}) {
   const meta = document.createElement('span'); meta.className = 'track-meta';
   // フォルダ見出しの下ではフォルダ名を繰り返さない。
   // 再生数は 1 回以上のときだけ出す。
-  const plays = playsOf(track);
-  meta.textContent = `${track.duration ? time(track.duration) : '--:--'}${plays ? ` · ${playsLabel(plays)}` : ''}${grouped ? '' : ` · ${track.folder}`}`;
+  meta.textContent = `${track.duration ? time(track.duration) : '--:--'}${grouped ? '' : ` · ${track.folder}`}`;
   info.append(title, meta); play.append(info);
   play.onclick = () => {
     if (select) { toggleSelect(track.id); return; }
@@ -270,32 +259,38 @@ async function shareTrack(track) {
     if (error.name !== 'AbortError') await copy();
   } finally { sharing = false; }
 }
-function showDetails(track) {
-  $('detail-title').textContent = track.title;
-  const rows = [['Folder', track.folder], ['Length', track.duration ? time(track.duration) : '-'], ['Size', megabytes(track.size)], ['Added', track.uploadedAt ? (admin() ? new Date(track.uploadedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : new Date(track.uploadedAt).toLocaleDateString()) : '-'], ['Lyrics', track.lyrics ? 'Yes' : 'No'], ['Saved', saved.has(track.id) ? 'Yes' : 'No'], ['Cloud', track.gone ? 'Removed' : 'Available'], ['File', track.id]];
-  // 管理者の端末だけ、区切り線の下に手元にある情報をまとめて出す。新しく取りに行くものは無い。
-  const extra = admin() ? adminDetails(track) : [];
-  $('detail-list').replaceChildren(...[...rows, ...extra].flatMap(([k, v], index) => {
-    const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v;
-    if (index === rows.length) { dt.className = dd.className = 'detail-admin'; }
-    return [dt, dd];
-  }));
+// 詳細。手元の情報をすぐ出し、再生数は取り直してから差し替える。
+async function showDetails(track) {
+  renderDetails(track);
   $('detail').showModal();
+  await loadStats();
+  if ($('detail').open && $('detail').dataset.id === track.id) renderDetails(track);
 }
-// 再生数（/api/stats）と一覧の属性から出せるものだけ。順位は同数を同じ順位にする。
-function adminDetails(track) {
+function renderDetails(track) {
+  $('detail').dataset.id = track.id;
+  $('detail-title').textContent = track.title;
   const plays = playsOf(track);
   const listed = tracks.filter(item => !item.gone);
+  // 順位は同数を同じ順位にする。聴かれた時間は回数 × 長さの目安（途中までの再生も 1 回なので多めに出る）。
   const rank = listed.filter(item => playsOf(item) > plays).length + 1;
-  return [
-    ['Plays', String(plays)],
-    ['Rank', plays ? `${rank} / ${listed.length}` : '-'],
-    // 聴かれた合計時間の目安（回数 × 長さ）。途中までの再生も 1 回に数えるので上限の目安。
+  const counted = Boolean(stats) || plays > 0;
+  const rows = [
+    ['Folder', track.folder],
+    ['Length', track.duration ? time(track.duration) : '-'],
+    ['Plays', counted ? String(plays) : '-'],
+    ['Rank', stats && plays && !track.gone ? `${rank} / ${listed.length}` : '-'],
     ['Listened', plays && track.duration ? (plays * track.duration < 60 ? time(plays * track.duration) : durationLabel(plays * track.duration)) : '-'],
+    ['Size', megabytes(track.size)],
     ['Bitrate', track.duration ? `${Math.round((track.size * 8) / track.duration / 1000)} kbps` : '-'],
+    ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-'],
+    ['Lyrics', track.lyrics ? 'Yes' : 'No'],
     ['Cover', track.cover ? 'Yes' : 'No'],
-    ...(track.previous?.length ? [['Moved from', track.previous.join('\n')]] : []),
+    ['Saved', saved.has(track.id) ? 'Yes' : 'No'],
+    ['Cloud', track.gone ? 'Removed' : 'Available'],
+    ['File', track.id],
+    ...(track.previous?.some(id => id !== track.id) ? [['Moved from', track.previous.filter(id => id !== track.id).join('\n')]] : []),
   ];
+  $('detail-list').replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; return [dt, dd]; }));
 }
 $('detail-close').onclick = () => $('detail').close();
 
@@ -395,11 +390,10 @@ $('select-all').onclick = () => { const all = homeTracks(); selecting = new Set(
 $('select-add').onclick = () => { if (selecting.size) pickPlaylist([...selecting], endSelect); };
 
 // ---- Home ----
-const homeSort = () => shownSort(settings.sort, admin());
-const homeTracks = () => arrange(tracks.filter(track => !track.gone), homeSort(), playsOf);
+const homeTracks = () => arrange(tracks.filter(track => !track.gone), settings.sort);
 function renderHome() {
   const visible = homeTracks();
-  $('sort-label').textContent = SORT_LABEL[homeSort()];
+  $('sort-label').textContent = SORT_LABEL[settings.sort];
   $('home-empty').hidden = visible.length > 0;
   $('select-bar').hidden = !selecting; $('home-bar').hidden = Boolean(selecting);
   if (selecting) { $('select-count').textContent = `${selecting.size} selected`; $('select-add').disabled = !selecting.size; }
@@ -435,7 +429,7 @@ function folderHead({ folder, tracks: members }, open) {
   head.append(toggle, play);
   return head;
 }
-$('sort').onclick = () => { settings.sort = nextSort(homeSort(), admin()); settings.sortChosen = true; persistSettings(); renderHome(); };
+$('sort').onclick = () => { settings.sort = nextSort(settings.sort); settings.sortChosen = true; persistSettings(); renderHome(); };
 // 一覧をシャッフル再生。開始曲も無作為に選ぶ。
 function shufflePlay(list) {
   const candidates = list.filter(playableNow);
@@ -639,10 +633,9 @@ async function verifyPassword() {
   try {
     const r = await fetch('/api/auth', { method: 'POST', headers: authHeaders() }); adminOK = r.ok;
     // 変更された古いパスワードは捨てる。起動のたびに警告しない。
-    if (r.status === 401) { settings.password = ''; stats = {}; persistSettings(); writeState('stats', {}).catch(() => {}); toast('Wrong password'); }
+    if (r.status === 401) { settings.password = ''; persistSettings(); toast('Wrong password'); }
   } catch { adminOK = false; }
-  if (adminOK) await loadStats();
-  renderAll();
+  if (openView === 'settings') renderSettings();
 }
 $('password-form').onsubmit = async event => {
   event.preventDefault();
@@ -812,7 +805,6 @@ $('admin').addEventListener('drop', async e => {
 // ---- 同期・更新 ----
 let refreshing;
 async function refresh(force = false) {
-  void loadStats();
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try {
@@ -920,12 +912,11 @@ $('install-close').onclick = () => { $('install').hidden = true; settings.instal
 async function start() {
   const [library, savedSettings, playlists, playerState] = await Promise.all([readState('library'), readState('settings'), readState('playlists'), readState('player')]).catch(() => []);
   settings = { ...settings, ...(savedSettings || {}) };
-  // 自分でソートを変えたことが無い端末は、標準のフォルダ表示へ。
-  if (!settings.sortChosen) settings.sort = 'folder';
+  // 自分でソートを変えたことが無い端末と、無くなったソート（Popular）を選んでいた端末は、標準のフォルダ表示へ。
+  if (!settings.sortChosen || !SORTS.includes(settings.sort)) settings.sort = 'folder';
   store = PL.normalise(playlists);
   saved = await savedTracks();
   await loadPlays();
-  if (admin()) stats = (await readState('stats').catch(() => null)) || {};
   if (library?.tracks) { tracks = library.tracks; libraryEtag = library.etag || ''; for (const t of tracks) known.add(t.id); }
   else $('loading').hidden = false;
   renderAll(); offerInstall();

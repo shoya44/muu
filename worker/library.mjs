@@ -36,8 +36,9 @@ export const PREVIOUS_BYTES = 1000;
 export function parsePrevious(value) {
   try { const list = JSON.parse(value || '[]'); return Array.isArray(list) ? list.filter(isTrackKey) : []; } catch { return []; }
 }
-export function previousAfterMove(from, value) {
-  const list = [from, ...parsePrevious(value).filter(key => key !== from)];
+// 今の key（to）は履歴に入れない（移動して戻したときなど）。
+export function previousAfterMove(from, value, to) {
+  const list = [from, ...parsePrevious(value).filter(key => key !== from)].filter(key => key !== to);
   while (list.length > 1 && new TextEncoder().encode(JSON.stringify(list)).length > PREVIOUS_BYTES) list.pop();
   return JSON.stringify(list);
 }

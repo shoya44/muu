@@ -55,9 +55,9 @@ async function api(request, env, ctx, rest, url) {
     return fail(405, 'method_not_allowed');
   }
   if (resource === 'stats' && !path.length) {
-    // 再生数は管理者だけが見る。数えるのは誰でも（POST /api/plays）。
+    // 再生数。読むのも数えるのも誰でも（Details で使う）。
     if (request.method !== 'GET') return fail(405, 'method_not_allowed');
-    return withAuth(request, env, async () => json({ plays: await readPlays(env.MEDIA) }));
+    return json({ plays: await readPlays(env.MEDIA) });
   }
   if (resource === 'plays' && !path.length) {
     if (request.method !== 'POST') return fail(405, 'method_not_allowed');
@@ -259,7 +259,7 @@ async function editTrack(request, env, ctx, key, url) {
   const meta = source.customMetadata || {};
   if (!moved && meta.title === title) { await source.body.cancel(); return json({ id: key, folder, title }); }
   const customMetadata = { ...meta, title };
-  if (moved) customMetadata.previous = previousAfterMove(key, meta.previous);
+  if (moved) customMetadata.previous = previousAfterMove(key, meta.previous, to);
   await env.MEDIA.put(to, source.body.pipeThrough(new FixedLengthStream(source.size)), { httpMetadata: source.httpMetadata, customMetadata });
   if (moved) {
     const words = await env.MEDIA.get(lyricsKeyFor(key));

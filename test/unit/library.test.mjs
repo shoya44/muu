@@ -80,6 +80,7 @@ test('moves: previous keys ride along in metadata, newest first, within the size
   const kept = previousAfterMove('n/new.mp3', JSON.stringify(long));
   assert.ok(new TextEncoder().encode(kept).length <= PREVIOUS_BYTES);
   assert.equal(JSON.parse(kept)[0], 'n/new.mp3');
+  assert.deepEqual(JSON.parse(previousAfterMove('b/1.mp3', '["a/1.mp3"]', 'a/1.mp3')), ['b/1.mp3']);
   assert.deepEqual(parsePrevious('not json'), []);
   const [track] = buildLibrary([obj('b/1.mp3', 1, { title: 'x', duration: '1', uploadedAt: '1', previous: '["a/1.mp3","bad"]' })]);
   assert.deepEqual(track.previous, ['a/1.mp3']);
