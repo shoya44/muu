@@ -43,7 +43,7 @@ _stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最
 
 | API | 認可 | 用途 |
 | --- | --- | --- |
-| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics, plays, previous?}] }` |
+| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics, previous?}] }`。再生数は含めない |
 | GET /media/:id | なし | MP3。Range 対応（R2 の range get をそのまま返す）。無ければ 404 |
 | GET /covers/:folder | なし | cover.jpg。無ければ 404、PWA は代替画像 |
 | GET /lyrics/:id | なし | 歌詞。`text/plain; charset=utf-8`。無ければ 404 |
@@ -53,6 +53,7 @@ _stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最
 | DELETE /api/lyrics/:id | パスワード | 歌詞の削除。存在しなくても 204 |
 | PATCH /api/tracks/:id | パスワード | 曲名の変更・フォルダの移動。本文 = `{ to, title }`（to は新しい key）。写してから元を消し、歌詞も移す。uploadedAt は保ち、previous に元の key を足す。移動先が有れば 409 |
 | DELETE /api/tracks/:id | パスワード | 削除。歌詞も一緒に消す。存在しなくても 204 |
+| GET /api/stats | パスワード | 再生数 `{ plays: { id: 回数 } }`。管理者の端末だけが読む |
 | POST /api/plays | なし（越境要求は拒否） | 再生数の報告。本文 = `{ batch, plays: { id: 回数 } }`。同じ batch は一度だけ数える。`_stats.json` を条件付き書き込み（etag 一致）で更新し、衝突したら読み直す |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
 | GET /version.json | なし | `{ version, built }`。Worker が返す |
@@ -82,6 +83,7 @@ _stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最
 | 同 キー `playlists` | My Playlist |
 | 同 キー `player` | 現在曲、位置、キュー、シャッフル、リピート |
 | 同 キー `plays` | 再生数の送信待ち `{ pending, sending }`。送れたら消す |
+| 同 キー `stats` | 管理者の端末だけ。前回取った再生数（オフラインでも表示するため） |
 | 同 キー `settings` | ソート、自動保存、復元、パスワード、設定カードの開閉 |
 | Cache `muu-shell-<ver>-<built>` | アプリ本体。名前にデプロイ時刻を含むので、同じ版の出し直しでも新しい本体になる。新版が有効になると旧版だけ捨てる |
 | Cache `muu-media-v1` | 音声。key = `/media/<id>`。保存済みの索引はこの Cache の key から都度作る（別の索引は持たない） |

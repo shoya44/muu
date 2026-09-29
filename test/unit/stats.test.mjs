@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseStats, validReport, addReport, moveCount, updateStats, STATS_KEY } from '../../worker/stats.mjs';
-import { buildLibrary, etagFor } from '../../worker/library.mjs';
+import { buildLibrary } from '../../worker/library.mjs';
 
 test('stats: broken or missing data reads as zero plays', () => {
   assert.deepEqual(parseStats(''), { plays: {}, batches: [] });
@@ -46,10 +46,9 @@ test('stats: a conflicting write is retried on fresh data', async () => {
   assert.equal(JSON.parse(stored).plays['a/1.mp3'], 6);
 });
 
-test('library carries play counts, and the etag moves with them', async () => {
+test('the public library never carries play counts, and the stats object is not a track', () => {
   const obj = [{ key: 'a/1.mp3', size: 1, customMetadata: { title: 'x', duration: '1', uploadedAt: '1' } }, { key: STATS_KEY, size: 10 }];
-  const [track] = buildLibrary(obj, { 'a/1.mp3': 4 });
-  assert.equal(track.plays, 4);
-  assert.equal(buildLibrary(obj).length, 1);
-  assert.notEqual(await etagFor(buildLibrary(obj, { 'a/1.mp3': 4 })), await etagFor(buildLibrary(obj, { 'a/1.mp3': 5 })));
+  const tracks = buildLibrary(obj);
+  assert.equal(tracks.length, 1);
+  assert.equal('plays' in tracks[0], false);
 });

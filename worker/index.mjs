@@ -54,9 +54,14 @@ async function api(request, env, ctx, rest, url) {
     if (request.method === 'DELETE') return withAuth(request, env, () => deleteLyrics(env, ctx, key, url));
     return fail(405, 'method_not_allowed');
   }
+  if (resource === 'stats' && !path.length) {
+    // 再生数は管理者だけが見る。数えるのは誰でも（POST /api/plays）。
+    if (request.method !== 'GET') return fail(405, 'method_not_allowed');
+    return withAuth(request, env, async () => json({ plays: await readPlays(env.MEDIA) }));
+  }
   if (resource === 'plays' && !path.length) {
     if (request.method !== 'POST') return fail(405, 'method_not_allowed');
-    return reportPlays(request, env, ctx, url);
+    return reportPlays(request, env);
   }
   if (resource === 'auth' && !path.length) {
     // パスワードの確認だけ。何も変更しない。
@@ -92,7 +97,7 @@ async function library(request, env, ctx, url) {
   const cacheKey = libraryCacheKey(url);
   let response = await cache.match(cacheKey);
   if (!response) {
-    const tracks = buildLibrary(await listAll(env.MEDIA), await readPlays(env.MEDIA));
+    const tracks = buildLibrary(await listAll(env.MEDIA));
     const etag = await etagFor(tracks);
     response = json({ etag, tracks, used: tracks.reduce((sum, track) => sum + track.size, 0), limit: Number(env.MAX_BUCKET_BYTES) || 0 }, 200, { etag, 'cache-control': `public, max-age=${LIBRARY_TTL}` });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -158,7 +163,7 @@ async function lyrics(request, env, key) {
 
 // 端末が数えた再生回数を受け取る。読み取りと同じく認証なし（聴く人は誰でも数える）。越境要求だけ拒む。
 // オフラインで貯めた分もまとめて届く。同じ送信 ID の送り直しは一度だけ数える。
-async function reportPlays(request, env, ctx, url) {
+async function reportPlays(request, env) {
   if (!sameOrigin(request)) return fail(403, 'cross_site');
   if (Number(request.headers.get('content-length')) > 64 * 1024) return fail(413, 'too_large');
   let body;
@@ -166,7 +171,6 @@ async function reportPlays(request, env, ctx, url) {
   const report = validReport(body);
   if (!report) return fail(400, 'invalid_body');
   await updateStats(env.MEDIA, stats => addReport(stats, report));
-  forgetLibrary(ctx, url);
   return new Response(null, { status: 204 });
 }
 // 曲の改名・移動・削除に回数を付いて行かせる。失敗しても曲の操作は取り消さない。

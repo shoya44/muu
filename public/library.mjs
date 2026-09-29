@@ -4,10 +4,13 @@ export const SORTS = ['folder', 'new', 'old', 'az', 'za', 'popular'];
 export const SORT_LABEL = { folder: 'Folder', new: 'New', old: 'Old', az: 'A-Z', za: 'Z-A', popular: 'Popular' };
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-export function nextSort(sort) { return SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length]; }
+// Popular は再生数を見られる管理者だけ。それ以外の端末では巡回から外し、選んであってもフォルダ表示にする。
+const sortsFor = admin => (admin ? SORTS : SORTS.filter(sort => sort !== 'popular'));
+export function nextSort(sort, admin = true) { const list = sortsFor(admin); return list[(list.indexOf(sort) + 1) % list.length]; }
+export const shownSort = (sort, admin) => (sortsFor(admin).includes(sort) ? sort : 'folder');
 
-// plays は再生数の引き方（この端末の未送信分を足すため）。Popular は多い順、同数は曲名順。
-export function arrange(tracks, sort = 'folder', plays = track => track.plays || 0) {
+// plays は再生数の引き方（管理者の端末で /api/stats から取った回数）。Popular は多い順、同数は曲名順。
+export function arrange(tracks, sort = 'folder', plays = () => 0) {
   const list = [...tracks];
   if (sort === 'popular') return list.sort((a, b) => plays(b) - plays(a) || collator.compare(a.title, b.title));
   if (sort === 'az') return list.sort((a, b) => collator.compare(a.title, b.title));
