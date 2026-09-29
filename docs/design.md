@@ -32,6 +32,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 <folder>/<file>.mp3   customMetadata: title, duration(秒), uploadedAt(ISO), previous(改名・移動前の key の JSON 配列。新しい順、1 KB まで)
 <folder>/<file>.txt   同名の曲の歌詞（UTF-8、64 KB まで、改行は LF に正規化）
 <folder>/cover.jpg
+_stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最近受け付けた送信 ID] }。フォルダ直下ではないので曲として出ない
 ```
 
 - 楽曲 ID = オブジェクト key。URL エンコードしてパスに載せる。
@@ -42,7 +43,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 | API | 認可 | 用途 |
 | --- | --- | --- |
-| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics, previous?}] }` |
+| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics, plays, previous?}] }` |
 | GET /media/:id | なし | MP3。Range 対応（R2 の range get をそのまま返す）。無ければ 404 |
 | GET /covers/:folder | なし | cover.jpg。無ければ 404、PWA は代替画像 |
 | GET /lyrics/:id | なし | 歌詞。`text/plain; charset=utf-8`。無ければ 404 |
@@ -52,6 +53,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | DELETE /api/lyrics/:id | パスワード | 歌詞の削除。存在しなくても 204 |
 | PATCH /api/tracks/:id | パスワード | 曲名の変更・フォルダの移動。本文 = `{ to, title }`（to は新しい key）。写してから元を消し、歌詞も移す。uploadedAt は保ち、previous に元の key を足す。移動先が有れば 409 |
 | DELETE /api/tracks/:id | パスワード | 削除。歌詞も一緒に消す。存在しなくても 204 |
+| POST /api/plays | なし（越境要求は拒否） | 再生数の報告。本文 = `{ batch, plays: { id: 回数 } }`。同じ batch は一度だけ数える。`_stats.json` を条件付き書き込み（etag 一致）で更新し、衝突したら読み直す |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
 | GET /version.json | なし | `{ version, built }`。Worker が返す |
 
@@ -66,6 +68,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 - `player.mjs`：`<audio>` 1 個、キュー、シャッフル、リピート（全曲）、Media Session、前回状態の復元。
 - `storage.mjs`：IndexedDB 1 ストア（`state`）の読み書きと、Cache Storage の音声索引・使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。
 - `downloads.mjs`：音声とカバーの保存。完全に受信できたときだけ Cache に入れる。
+- `plays.mjs`：再生数の送信待ち。数えた回数を IndexedDB に貯め、送信 ID を付けてまとめて送る。数えるのは `player.mjs`（30 秒か半分）。
 - `playlists.mjs`：My Playlist のデータ（id, name, trackIds[]。配列順が表示順）。曲参照は R2 key。一覧に無い key はグレー表示。
 - `sheet.mjs` / `popover.mjs` / `drag.mjs`：再生画面のスワイプ、アンカー付きメニュー、長押しドラッグの並べ替え。
 - `sw.mjs`：アプリ本体は precache、`/media/*` は Cache Storage 優先・無ければネットワーク、`/lyrics/*` はネットワーク優先・失敗したら Cache（曲が保存済みなら取れた歌詞を Cache に置く）、`/api/*` はネットワークのみ。更新時に音声キャッシュへ触らない。
@@ -78,6 +81,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | IndexedDB `muu` / ストア `state` / キー `library` | 前回一覧 JSON と etag |
 | 同 キー `playlists` | My Playlist |
 | 同 キー `player` | 現在曲、位置、キュー、シャッフル、リピート |
+| 同 キー `plays` | 再生数の送信待ち `{ pending, sending }`。送れたら消す |
 | 同 キー `settings` | ソート、自動保存、復元、パスワード、設定カードの開閉 |
 | Cache `muu-shell-<ver>-<built>` | アプリ本体。名前にデプロイ時刻を含むので、同じ版の出し直しでも新しい本体になる。新版が有効になると旧版だけ捨てる |
 | Cache `muu-media-v1` | 音声。key = `/media/<id>`。保存済みの索引はこの Cache の key から都度作る（別の索引は持たない） |

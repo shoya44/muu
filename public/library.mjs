@@ -1,13 +1,15 @@
 // 一覧の整形と表示用の純粋関数。ブラウザなしで検証できる。
-// 標準はフォルダ表示。巡回は Folder → New → Old → A-Z → Z-A。
-export const SORTS = ['folder', 'new', 'old', 'az', 'za'];
-export const SORT_LABEL = { folder: 'Folder', new: 'New', old: 'Old', az: 'A-Z', za: 'Z-A' };
+// 標準はフォルダ表示。巡回は Folder → New → Old → A-Z → Z-A → Popular。
+export const SORTS = ['folder', 'new', 'old', 'az', 'za', 'popular'];
+export const SORT_LABEL = { folder: 'Folder', new: 'New', old: 'Old', az: 'A-Z', za: 'Z-A', popular: 'Popular' };
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 export function nextSort(sort) { return SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length]; }
 
-export function arrange(tracks, sort = 'folder') {
+// plays は再生数の引き方（この端末の未送信分を足すため）。Popular は多い順、同数は曲名順。
+export function arrange(tracks, sort = 'folder', plays = track => track.plays || 0) {
   const list = [...tracks];
+  if (sort === 'popular') return list.sort((a, b) => plays(b) - plays(a) || collator.compare(a.title, b.title));
   if (sort === 'az') return list.sort((a, b) => collator.compare(a.title, b.title));
   if (sort === 'za') return list.sort((a, b) => collator.compare(b.title, a.title));
   if (sort === 'folder') return list.sort((a, b) => collator.compare(a.folder, b.folder) || collator.compare(a.title, b.title));
@@ -23,6 +25,8 @@ export const megabytes = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 // 容量の表示。1 GB 以上は GB で、それ未満は MB で。
 export const bytesLabel = bytes => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : megabytes(bytes));
 export const time = seconds => `${Math.floor((seconds || 0) / 60)}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
+// 再生数の表示。
+export const playsLabel = n => `${n} ${n === 1 ? 'play' : 'plays'}`;
 // 曲数の表示。単位を必ず付ける。
 export const tracksLabel = n => `${n} ${n === 1 ? 'track' : 'tracks'}`;
 // 合計時間の表示。1 時間以上は "1h 05m"、それ未満は "12 min"。

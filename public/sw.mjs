@@ -6,7 +6,7 @@ const SHELL = `muu-shell-${VERSION}-${BUILT.replace(/[^0-9]/g, '') || 'dev'}`;
 const AUDIO = 'muu-media-v1';
 const COVERS = 'muu-covers-v1';
 const LYRICS = 'muu-lyrics-v1';
-const FILES = ['/', '/index.html', '/styles.css', '/theme.css', '/app.mjs', '/player.mjs', '/storage.mjs', '/downloads.mjs', '/library.mjs', '/playlists.mjs', '/popover.mjs', '/drag.mjs', '/sheet.mjs', '/range.mjs', '/icons.mjs', '/version.mjs', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/cover-placeholder.svg'];
+const FILES = ['/', '/index.html', '/styles.css', '/theme.css', '/app.mjs', '/player.mjs', '/storage.mjs', '/downloads.mjs', '/library.mjs', '/playlists.mjs', '/plays.mjs', '/popover.mjs', '/drag.mjs', '/sheet.mjs', '/range.mjs', '/icons.mjs', '/version.mjs', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/cover-placeholder.svg'];
 
 // 新版はインストールが済んだら待たずに引き継ぐ。ページ側は制御が移ったのを見て読み込み直す。
 // 音声・カバーのキャッシュは別名前空間なので、引き継ぎで失われない。

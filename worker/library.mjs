@@ -42,7 +42,8 @@ export function previousAfterMove(from, value) {
   return JSON.stringify(list);
 }
 
-export function buildLibrary(objects) {
+// plays = { <曲の key>: 再生数 }（worker/stats.mjs）。無い曲は 0。
+export function buildLibrary(objects, plays = {}) {
   const covers = new Set();
   const lyrics = new Set();
   for (const object of objects) {
@@ -66,6 +67,7 @@ export function buildLibrary(objects) {
       uploadedAt: meta.uploadedAt || (object.uploaded instanceof Date ? object.uploaded.toISOString() : String(object.uploaded || '')),
       cover: covers.has(folder),
       lyrics: lyrics.has(lyricsKeyFor(object.key).toLowerCase()),
+      plays: plays[object.key] || 0,
       ...(previous.length ? { previous } : {}),
     });
   }
@@ -74,7 +76,7 @@ export function buildLibrary(objects) {
 }
 
 export async function etagFor(tracks) {
-  const text = tracks.map(track => `${track.id}:${track.title}:${track.size}:${track.uploadedAt}:${track.cover ? 1 : 0}:${track.lyrics ? 1 : 0}`).join('\n');
+  const text = tracks.map(track => `${track.id}:${track.title}:${track.size}:${track.uploadedAt}:${track.cover ? 1 : 0}:${track.lyrics ? 1 : 0}:${track.plays || 0}`).join('\n');
   const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
   return `"${[...new Uint8Array(digest)].slice(0, 10).map(byte => byte.toString(16).padStart(2, '0')).join('')}"`;
 }

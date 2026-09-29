@@ -5,8 +5,9 @@ let counter = 0;
 const entry = track => ({ key: `q${Date.now().toString(36)}${(counter++).toString(36)}`, track });
 
 export class Player {
-  constructor(audio, { changed, message, persist }) {
+  constructor(audio, { changed, message, persist, played = () => {} }) {
     this.audio = audio; this.changed = changed; this.message = message; this.persist = persist;
+    this.listened = 0; this.counted = false; this.lastTime = 0; this.lastWall = 0; this.played = played;
     this.queue = []; this.order = []; this.history = [];
     this.index = -1; this.pendingPosition = 0; this.failed = new Set(); this.wantsPlayback = false;
     this.shuffle = false; this.repeat = false;
@@ -15,9 +16,11 @@ export class Player {
       this.pendingPosition = 0; changed();
     });
     for (const type of ['play', 'pause', 'durationchange']) audio.addEventListener(type, () => { if (type === 'play') this.configureMediaSession(); changed(); this.save(); });
-    audio.addEventListener('timeupdate', () => { changed(); if (Date.now() - (this.lastSave || 0) > 3000) this.save(); });
-    audio.addEventListener('seeked', () => this.save());
-    audio.addEventListener('ended', () => this.next());
+    audio.addEventListener('timeupdate', () => { this.tally(); changed(); if (Date.now() - (this.lastSave || 0) > 3000) this.save(); });
+    audio.addEventListener('play', () => this.mark());
+    audio.addEventListener('pause', () => this.tally());
+    audio.addEventListener('seeked', () => { this.mark(); this.save(); });
+    audio.addEventListener('ended', () => { this.tally(); this.next(); });
     audio.addEventListener('error', () => {
       if (!this.track) return;
       if (!this.failed.has(this.track.id)) { this.failed.add(this.track.id); message(`Can't play: ${this.track.title}`); }
@@ -69,6 +72,18 @@ export class Player {
     }
     if (current) this.load(!this.audio.paused, this.pendingPosition || this.audio.currentTime || 0);
     else if (touched) { this.changed(); this.save(); }
+  }
+  // 再生数: 30 秒、または曲の半分を聴いたら 1 回。
+  // 聴いた時間は再生位置の進みで測る。ただし実時間より大きく進んだ分（シーク）は入れない。
+  // 画面ロック中などでイベントの間隔が空いても、実時間も同じだけ進んでいるので取りこぼさない。
+  mark(position = this.audio.currentTime) { this.lastTime = position; this.lastWall = performance.now(); }
+  tally() {
+    const now = this.audio.currentTime, wall = performance.now();
+    const step = now - this.lastTime, elapsed = (wall - this.lastWall) / 1000;
+    this.lastTime = now; this.lastWall = wall;
+    if (!this.track || this.counted || step <= 0 || step > elapsed * (this.audio.playbackRate || 1) + 1) return;
+    this.listened += step;
+    if (this.listened >= Math.min(30, (this.track.duration || this.audio.duration || 60) / 2)) { this.counted = true; this.played(this.track); }
   }
   start(tracks, id) {
     this.failed.clear(); this.history = [];
@@ -135,6 +150,7 @@ export class Player {
   load(autoplay, position = 0) {
     if (!this.track) return;
     this.wantsPlayback = autoplay;
+    this.listened = 0; this.counted = false; this.mark(position);
     this.audio.pause(); this.pendingPosition = position;
     this.audio.src = mediaURL(this.track); this.audio.load();
     if ('mediaSession' in navigator) {

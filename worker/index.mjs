@@ -1,6 +1,7 @@
 // muu Worker: 静的 PWA と API を同一オリジンで配信する。API の一覧は docs/design.md 4 章。
 import { buildLibrary, etagFor, validName, isTrackKey, lyricsKeyFor, previousAfterMove, COVER_NAME } from './library.mjs';
-import { authorize } from './auth.mjs';
+import { authorize, sameOrigin } from './auth.mjs';
+import { readPlays, updateStats, validReport, addReport, moveCount } from './stats.mjs';
 import { VERSION, BUILT } from '../public/version.mjs';
 
 const LIBRARY_TTL = 30; // 秒。一覧は R2 の list() を叩き直すより短く保つ。
@@ -53,6 +54,10 @@ async function api(request, env, ctx, rest, url) {
     if (request.method === 'DELETE') return withAuth(request, env, () => deleteLyrics(env, ctx, key, url));
     return fail(405, 'method_not_allowed');
   }
+  if (resource === 'plays' && !path.length) {
+    if (request.method !== 'POST') return fail(405, 'method_not_allowed');
+    return reportPlays(request, env, ctx, url);
+  }
   if (resource === 'auth' && !path.length) {
     // パスワードの確認だけ。何も変更しない。
     if (request.method !== 'POST') return fail(405, 'method_not_allowed');
@@ -87,7 +92,7 @@ async function library(request, env, ctx, url) {
   const cacheKey = libraryCacheKey(url);
   let response = await cache.match(cacheKey);
   if (!response) {
-    const tracks = buildLibrary(await listAll(env.MEDIA));
+    const tracks = buildLibrary(await listAll(env.MEDIA), await readPlays(env.MEDIA));
     const etag = await etagFor(tracks);
     response = json({ etag, tracks, used: tracks.reduce((sum, track) => sum + track.size, 0), limit: Number(env.MAX_BUCKET_BYTES) || 0 }, 200, { etag, 'cache-control': `public, max-age=${LIBRARY_TTL}` });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -148,6 +153,24 @@ async function lyrics(request, env, key) {
   if (!('body' in object)) return new Response(null, { status: 304, headers });
   return new Response(object.body, { headers });
 }
+
+// ---- 再生数 ----
+
+// 端末が数えた再生回数を受け取る。読み取りと同じく認証なし（聴く人は誰でも数える）。越境要求だけ拒む。
+// オフラインで貯めた分もまとめて届く。同じ送信 ID の送り直しは一度だけ数える。
+async function reportPlays(request, env, ctx, url) {
+  if (!sameOrigin(request)) return fail(403, 'cross_site');
+  if (Number(request.headers.get('content-length')) > 64 * 1024) return fail(413, 'too_large');
+  let body;
+  try { body = await request.json(); } catch { return fail(400, 'invalid_body'); }
+  const report = validReport(body);
+  if (!report) return fail(400, 'invalid_body');
+  await updateStats(env.MEDIA, stats => addReport(stats, report));
+  forgetLibrary(ctx, url);
+  return new Response(null, { status: 204 });
+}
+// 曲の改名・移動・削除に回数を付いて行かせる。失敗しても曲の操作は取り消さない。
+const followStats = async (env, from, to) => { try { await updateStats(env.MEDIA, stats => moveCount(stats, from, to)); } catch (error) { console.error(error); } };
 
 // ---- 書き込み ----
 
@@ -238,6 +261,7 @@ async function editTrack(request, env, ctx, key, url) {
     const words = await env.MEDIA.get(lyricsKeyFor(key));
     if (words) await env.MEDIA.put(lyricsKeyFor(to), await words.text(), { httpMetadata: words.httpMetadata });
     await env.MEDIA.delete([key, lyricsKeyFor(key)]);
+    await followStats(env, key, to);
   }
   forgetLibrary(ctx, url);
   return json({ id: to, folder, title });
@@ -247,6 +271,7 @@ async function deleteTrack(env, ctx, key, url) {
   if (!isTrackKey(key)) return fail(400, 'invalid_key');
   // 歌詞は曲の付随物。曲と一緒に消す。
   await env.MEDIA.delete([key, lyricsKeyFor(key)]);
+  await followStats(env, key, null);
   forgetLibrary(ctx, url);
   return new Response(null, { status: 204 });
 }

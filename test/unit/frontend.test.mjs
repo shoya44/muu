@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel, lyricsTarget, movedIDs, editedKey } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel, lyricsTarget, movedIDs, editedKey, playsLabel } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
 
 test('sort cycles and orders', () => {
-  assert.equal(nextSort('folder'), 'new'); assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'folder');
+  assert.equal(nextSort('folder'), 'new'); assert.equal(nextSort('new'), 'old'); assert.equal(nextSort('za'), 'popular'); assert.equal(nextSort('popular'), 'folder');
   const list = [t('a', 'Banana', '2'), t('b', 'apple', '3'), t('c', 'Cherry', '1')];
   assert.deepEqual(arrange(list, 'new').map(x => x.id), ['b', 'a', 'c']);
   assert.deepEqual(arrange(list, 'old').map(x => x.id), ['c', 'a', 'b']);
@@ -14,6 +14,9 @@ test('sort cycles and orders', () => {
   assert.deepEqual(arrange(list, 'za').map(x => x.id), ['c', 'a', 'b']);
   const folders = [t('a', 'B', '1', 'Zed'), t('b', 'A', '1', 'Zed'), t('c', 'C', '1', 'alpha')];
   assert.deepEqual(arrange(folders, 'folder').map(x => x.id), ['c', 'b', 'a']);
+  const popular = [{ ...t('a', 'B', '1'), plays: 2 }, { ...t('b', 'A', '1'), plays: 2 }, { ...t('c', 'C', '1'), plays: 5 }, t('d', 'D', '1')];
+  assert.deepEqual(arrange(popular, 'popular').map(x => x.id), ['c', 'b', 'a', 'd']);
+  assert.deepEqual(arrange(popular, 'popular', x => (x.id === 'd' ? 9 : x.plays || 0)).map(x => x.id), ['d', 'c', 'b', 'a']);
 });
 
 test('merge keeps saved tracks that left the cloud, drops unsaved ones', () => {
@@ -100,4 +103,9 @@ test('playlists follow moved tracks without duplicates', () => {
   assert.equal(PL.followMoves(store, new Map([['a/1.mp3', 'b/1.mp3'], ['a/2.mp3', 'c/2.mp3']])), true);
   assert.deepEqual(p.trackIds, ['b/1.mp3', 'c/2.mp3']);
   assert.equal(PL.followMoves(store, new Map([['z/9.mp3', 'y/9.mp3']])), false);
+});
+
+test('plays label', () => {
+  assert.equal(playsLabel(1), '1 play');
+  assert.equal(playsLabel(12), '12 plays');
 });

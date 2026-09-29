@@ -5,8 +5,9 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey, playsLabel } from './library.mjs';
 import * as PL from './playlists.mjs';
+import { loadPlays, recordPlay, flushPlays, unsent, followMoves as followPlayMoves } from './plays.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
 const $ = id => document.getElementById(id);
@@ -80,7 +81,15 @@ for (const button of document.querySelectorAll('.nav-item')) button.onclick = ()
 };
 
 // ---- プレイヤー ----
-const player = new Player($('audio'), { changed: renderPlayer, message: toast, persist: state => writeState('player', state).catch(() => {}) });
+const player = new Player($('audio'), { changed: renderPlayer, message: toast, persist: state => writeState('player', state).catch(() => {}), played: track => countPlay(track) });
+// 再生数。サーバーの回数に、この端末でまだ届いていない回数を足して見せる。
+const playsOf = track => (track.plays || 0) + unsent(track.id);
+async function countPlay(track) {
+  await recordPlay(track.id); renderAll();
+  void sendPlays();
+}
+// 送れたら一覧を取り直し、サーバー側の回数に置き換える。
+async function sendPlays() { if (navigator.onLine && (await flushPlays())) await refresh(true); }
 const sheet = setupSheet($('now'), { opening: renderQueue });
 // 歌詞の全画面から開くときは、全画面を閉じてその下の再生画面へ戻る。
 const openPlayer = () => { if ($('lyrics-full').open) $('lyrics-full').close(); sheet.open(); };
@@ -181,7 +190,9 @@ function makeRow(track, { list, playlist, select, grouped } = {}) {
   const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
   const meta = document.createElement('span'); meta.className = 'track-meta';
   // フォルダ見出しの下ではフォルダ名を繰り返さない。
-  meta.textContent = `${track.duration ? time(track.duration) : '--:--'}${grouped ? '' : ` · ${track.folder}`}`;
+  // 再生数は 1 回以上のときだけ出す。
+  const plays = playsOf(track);
+  meta.textContent = `${track.duration ? time(track.duration) : '--:--'}${plays ? ` · ${playsLabel(plays)}` : ''}${grouped ? '' : ` · ${track.folder}`}`;
   info.append(title, meta); play.append(info);
   play.onclick = () => {
     if (select) { toggleSelect(track.id); return; }
@@ -247,7 +258,7 @@ async function shareTrack(track) {
 }
 function showDetails(track) {
   $('detail-title').textContent = track.title;
-  const rows = [['Folder', track.folder], ['Length', track.duration ? time(track.duration) : '-'], ['Size', megabytes(track.size)], ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : '-'], ['Lyrics', track.lyrics ? 'Yes' : 'No'], ['Saved', saved.has(track.id) ? 'Yes' : 'No'], ['Cloud', track.gone ? 'Removed' : 'Available'], ['File', track.id]];
+  const rows = [['Folder', track.folder], ['Length', track.duration ? time(track.duration) : '-'], ['Plays', String(playsOf(track))], ['Size', megabytes(track.size)], ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : '-'], ['Lyrics', track.lyrics ? 'Yes' : 'No'], ['Saved', saved.has(track.id) ? 'Yes' : 'No'], ['Cloud', track.gone ? 'Removed' : 'Available'], ['File', track.id]];
   $('detail-list').replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; return [dt, dd]; }));
   $('detail').showModal();
 }
@@ -349,7 +360,7 @@ $('select-all').onclick = () => { const all = homeTracks(); selecting = new Set(
 $('select-add').onclick = () => { if (selecting.size) pickPlaylist([...selecting], endSelect); };
 
 // ---- Home ----
-const homeTracks = () => arrange(tracks.filter(track => !track.gone), settings.sort);
+const homeTracks = () => arrange(tracks.filter(track => !track.gone), settings.sort, playsOf);
 function renderHome() {
   const visible = homeTracks();
   $('sort-label').textContent = SORT_LABEL[settings.sort];
@@ -792,6 +803,7 @@ async function refresh(force = false) {
 async function followMoves(moves, remote) {
   const byID = new Map(remote.map(track => [track.id, track]));
   if (PL.followMoves(store, moves)) persistStore();
+  followPlayMoves(moves);
   const copied = [];
   for (const [from, to] of moves) {
     if (known.has(from)) known.add(to);
@@ -874,6 +886,7 @@ async function start() {
   if (!settings.sortChosen) settings.sort = 'folder';
   store = PL.normalise(playlists);
   saved = await savedTracks();
+  await loadPlays();
   if (library?.tracks) { tracks = library.tracks; libraryEtag = library.etag || ''; for (const t of tracks) known.add(t.id); }
   else $('loading').hidden = false;
   renderAll(); offerInstall();
@@ -886,7 +899,8 @@ async function start() {
   $('loading').hidden = true;
   void verifyPassword();
   void checkUpdate();
-  window.addEventListener('online', () => refresh());
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); checkUpdate(); } });
+  void sendPlays();
+  window.addEventListener('online', () => { refresh(); sendPlays(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); checkUpdate(); sendPlays(); } });
 }
 start();
