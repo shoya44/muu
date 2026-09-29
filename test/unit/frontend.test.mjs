@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel, lyricsTarget } from '../../public/library.mjs';
+import { arrange, nextSort, mergeLibrary, saveControl, safeFileName, titleOf, time, bytesLabel, durationLabel, groupUploads, groupByFolder, tracksLabel, lyricsTarget, movedIDs, editedKey } from '../../public/library.mjs';
 import * as PL from '../../public/playlists.mjs';
 
 const t = (id, title, uploadedAt, folder = 'f') => ({ id, title, uploadedAt, folder, duration: 10, size: 1, cover: false });
@@ -79,4 +79,25 @@ test('bulk upload groups files by their parent folder', () => {
   assert.deepEqual(jobs[1].lyrics.map(l => [l.file.name, l.id]), [['notes.txt', 'Winter/notes.mp3']]);
   assert.deepEqual(groupUploads([{ file: f('only.txt'), path: 'Solo/only.txt' }]).map(j => [j.folder, j.files, j.lyrics.map(l => l.id)]), [['Solo', [], ['Solo/only.mp3']]]);
   assert.equal(lyricsTarget('Album', 'My Song.TXT'), 'Album/My Song.mp3');
+});
+
+test('moves: previous keys map to the current key, unless the old key is back', () => {
+  const remote = [{ id: 'b/new.mp3', previous: ['a/old.mp3', 'a/older.mp3'] }, { id: 'a/older.mp3' }];
+  assert.deepEqual([...movedIDs(remote)], [['a/old.mp3', 'b/new.mp3']]);
+  assert.equal(movedIDs([{ id: 'x/1.mp3' }]).size, 0);
+});
+
+test('edited key: the file follows a new title, and stays when only the folder changes', () => {
+  const track = { id: 'a/01 Song.mp3', title: '01 Song', folder: 'a' };
+  assert.equal(editedKey(track, '01 Song', 'b'), 'b/01 Song.mp3');
+  assert.equal(editedKey(track, 'Mr. Blue', 'a'), 'a/Mr. Blue.mp3');
+  assert.equal(editedKey(track, 'a/b', 'c'), 'c/ab.mp3');
+});
+
+test('playlists follow moved tracks without duplicates', () => {
+  const store = PL.emptyStore();
+  const p = PL.createPlaylist(store, 'P'); PL.addTracks(p, ['a/1.mp3', 'b/1.mp3', 'a/2.mp3']);
+  assert.equal(PL.followMoves(store, new Map([['a/1.mp3', 'b/1.mp3'], ['a/2.mp3', 'c/2.mp3']])), true);
+  assert.deepEqual(p.trackIds, ['b/1.mp3', 'c/2.mp3']);
+  assert.equal(PL.followMoves(store, new Map([['z/9.mp3', 'y/9.mp3']])), false);
 });

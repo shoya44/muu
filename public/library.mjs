@@ -48,6 +48,19 @@ export function mergeLibrary(remote, previous, savedIDs) {
   return [...remote.map(track => ({ ...track, gone: false })), ...kept];
 }
 
+// 改名・移動の付け替え表（元の key → 今の key）。一覧に今も有る key は付け替えない（同じ名前で上げ直された曲）。
+export function movedIDs(remote) {
+  const now = new Set(remote.map(track => track.id));
+  const moves = new Map();
+  for (const track of remote) for (const from of track.previous || []) if (!now.has(from) && !moves.has(from)) moves.set(from, track.id);
+  return moves;
+}
+// 管理画面の編集で、新しい key を決める。曲名が変わればファイル名も曲名に合わせ、変わらなければ元のファイル名のまま。
+export function editedKey(track, title, folder) {
+  const file = title === track.title ? track.id.slice(track.id.indexOf('/') + 1) : safeFileName(`${title}.mp3`);
+  return `${folder}/${file}`;
+}
+
 // フォルダごとに区切る。入力の並びを保ち、同じフォルダの曲が続く前提（sort = 'folder'）。
 export function groupByFolder(tracks) {
   const groups = [];

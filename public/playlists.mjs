@@ -26,6 +26,16 @@ export function addTracks(playlist, ids) {
   for (const id of ids) if (!playlist.trackIds.includes(id)) { playlist.trackIds.push(id); added++; }
   return added;
 }
+// 改名・移動された曲の key を付け替える。付け替えた先が既に入っていれば重ねない。変わったら true。
+export function followMoves(store, moves) {
+  let changed = false;
+  for (const playlist of store.playlists) {
+    if (!playlist.trackIds.some(id => moves.has(id))) continue;
+    playlist.trackIds = [...new Set(playlist.trackIds.map(id => moves.get(id) || id))];
+    changed = true;
+  }
+  return changed;
+}
 export function removeTrack(playlist, id) { playlist.trackIds = playlist.trackIds.filter(t => t !== id); }
 // カードの並べ替え。表示中の ID の並びを正とする。
 export function reorder(store, orderedIDs) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLibrary, isTrackKey, isCoverKey, isLyricsKey, lyricsKeyFor, validName, etagFor } from '../../worker/library.mjs';
+import { buildLibrary, isTrackKey, isCoverKey, isLyricsKey, lyricsKeyFor, validName, etagFor, previousAfterMove, parsePrevious, PREVIOUS_BYTES } from '../../worker/library.mjs';
 
 const obj = (key, size, customMetadata, uploaded = new Date('2026-01-01')) => ({ key, size, customMetadata, uploaded });
 
@@ -70,4 +70,23 @@ test('names reject path tricks', () => {
   assert.ok(!validName('a/b'));
   assert.ok(!validName('a\b'));
   assert.ok(!validName(''));
+});
+
+test('moves: previous keys ride along in metadata, newest first, within the size budget', () => {
+  assert.deepEqual(JSON.parse(previousAfterMove('a/1.mp3', '')), ['a/1.mp3']);
+  assert.deepEqual(JSON.parse(previousAfterMove('b/1.mp3', '["a/1.mp3"]')), ['b/1.mp3', 'a/1.mp3']);
+  assert.deepEqual(JSON.parse(previousAfterMove('a/1.mp3', '["b/1.mp3","a/1.mp3"]')), ['a/1.mp3', 'b/1.mp3']);
+  const long = Array.from({ length: 30 }, (_, i) => `folder/${'x'.repeat(60)}${i}.mp3`);
+  const kept = previousAfterMove('n/new.mp3', JSON.stringify(long));
+  assert.ok(new TextEncoder().encode(kept).length <= PREVIOUS_BYTES);
+  assert.equal(JSON.parse(kept)[0], 'n/new.mp3');
+  assert.deepEqual(parsePrevious('not json'), []);
+  const [track] = buildLibrary([obj('b/1.mp3', 1, { title: 'x', duration: '1', uploadedAt: '1', previous: '["a/1.mp3","bad"]' })]);
+  assert.deepEqual(track.previous, ['a/1.mp3']);
+});
+
+test('etag changes when only the title changes', async () => {
+  const a = await etagFor(buildLibrary([obj('a/one.mp3', 1, { title: 'x', duration: '1', uploadedAt: '1' })]));
+  const b = await etagFor(buildLibrary([obj('a/one.mp3', 1, { title: 'y', duration: '1', uploadedAt: '1' })]));
+  assert.notEqual(a, b);
 });

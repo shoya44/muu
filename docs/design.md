@@ -29,7 +29,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 ## 3. R2 レイアウト
 
 ```text
-<folder>/<file>.mp3   customMetadata: title, duration(秒), uploadedAt(ISO)
+<folder>/<file>.mp3   customMetadata: title, duration(秒), uploadedAt(ISO), previous(改名・移動前の key の JSON 配列。新しい順、1 KB まで)
 <folder>/<file>.txt   同名の曲の歌詞（UTF-8、64 KB まで、改行は LF に正規化）
 <folder>/cover.jpg
 ```
@@ -42,7 +42,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 
 | API | 認可 | 用途 |
 | --- | --- | --- |
-| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics}] }` |
+| GET /api/library | なし | 曲一覧 JSON `{ etag, tracks:[{id, folder, title, duration, size, uploadedAt, cover, lyrics, previous?}] }` |
 | GET /media/:id | なし | MP3。Range 対応（R2 の range get をそのまま返す）。無ければ 404 |
 | GET /covers/:folder | なし | cover.jpg。無ければ 404、PWA は代替画像 |
 | GET /lyrics/:id | なし | 歌詞。`text/plain; charset=utf-8`。無ければ 404 |
@@ -50,6 +50,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 | PUT /api/covers/:folder | パスワード | cover.jpg のアップロード。上書き可 |
 | PUT /api/lyrics/:id | パスワード | 歌詞の登録。本文 = プレーンテキスト。上書き可。空本文は削除（204）。曲が無ければ 404 |
 | DELETE /api/lyrics/:id | パスワード | 歌詞の削除。存在しなくても 204 |
+| PATCH /api/tracks/:id | パスワード | 曲名の変更・フォルダの移動。本文 = `{ to, title }`（to は新しい key）。写してから元を消し、歌詞も移す。uploadedAt は保ち、previous に元の key を足す。移動先が有れば 409 |
 | DELETE /api/tracks/:id | パスワード | 削除。歌詞も一緒に消す。存在しなくても 204 |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
 | GET /version.json | なし | `{ version, built }`。Worker が返す |

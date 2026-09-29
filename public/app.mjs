@@ -1,11 +1,11 @@
-import { readState, writeState, savedTracks, removeSaved, clearSaved, estimate, AUDIO_CACHE, COVER_CACHE, LYRICS_CACHE } from './storage.mjs';
-import { saveTrack } from './downloads.mjs';
+import { readState, writeState, savedTracks, removeSaved, copySaved, clearSaved, estimate, AUDIO_CACHE, COVER_CACHE, LYRICS_CACHE } from './storage.mjs';
+import { saveTrack, saveCover } from './downloads.mjs';
 import { Player } from './player.mjs';
 import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel } from './library.mjs';
+import { arrange, nextSort, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey } from './library.mjs';
 import * as PL from './playlists.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
@@ -82,12 +82,14 @@ for (const button of document.querySelectorAll('.nav-item')) button.onclick = ()
 // ---- プレイヤー ----
 const player = new Player($('audio'), { changed: renderPlayer, message: toast, persist: state => writeState('player', state).catch(() => {}) });
 const sheet = setupSheet($('now'), { opening: renderQueue });
-$('mini-open').onclick = () => sheet.open();
+// 歌詞の全画面から開くときは、全画面を閉じてその下の再生画面へ戻る。
+const openPlayer = () => { if ($('lyrics-full').open) $('lyrics-full').close(); sheet.open(); };
+$('mini-open').onclick = openPlayer;
 $('sheet-close').onclick = () => $('now').close();
 // ミニプレイヤーを上へスワイプしても開く。シークバーの上で始まった指は除く。
 let swipe;
 $('mini').addEventListener('pointerdown', e => { if (e.target !== $('mini-seek')) swipe = { y: e.clientY, id: e.pointerId }; });
-$('mini').addEventListener('pointermove', e => { if (swipe && e.pointerId === swipe.id && swipe.y - e.clientY > 40) { swipe = undefined; sheet.open(); } });
+$('mini').addEventListener('pointermove', e => { if (swipe && e.pointerId === swipe.id && swipe.y - e.clientY > 40) { swipe = undefined; openPlayer(); } });
 $('mini').addEventListener('pointerup', () => { swipe = undefined; });
 for (const button of document.querySelectorAll('[data-player]')) button.onclick = () => player[button.dataset.player]();
 $('shuffle').onclick = () => player.setShuffle(!player.shuffle);
@@ -628,17 +630,40 @@ function renderAdmin() {
         if (status === 201) toast('Lyrics saved'); else if (status === 204) toast('Lyrics removed'); else { toast(`Save failed (${status})`); return; }
         await refresh(true);
       };
+      const edit = document.createElement('button'); edit.className = 'icon'; edit.innerHTML = icon('edit'); edit.setAttribute('aria-label', `Rename or move ${track.title}`);
+      edit.onclick = () => editTrack(track);
       const remove = document.createElement('button'); remove.className = 'icon'; remove.innerHTML = icon('delete'); remove.setAttribute('aria-label', `Delete ${track.title} from cloud`);
       remove.onclick = async () => {
         if (!(await confirm(`Delete "${track.title}" from the cloud for everyone?`, { ok: 'Delete' }))) return;
         const r = await fetch(`/api/tracks/${encodeURIComponent(track.id)}`, { method: 'DELETE', headers: authHeaders() });
         if (r.status === 204) { toast('Deleted'); await refresh(true); } else toast(`Delete failed (${r.status})`);
       };
-      row.append(info, lyrics, remove); return row;
+      row.append(info, edit, lyrics, remove); return row;
     }));
     details.append(summary, list);
     return details;
   }));
+}
+// 曲名の変更とフォルダの移動。歌詞も一緒に移る。曲名を変えるとファイル名も曲名に合わせる。
+function editTrack(track) {
+  const dialog = $('track-editor');
+  $('track-name').value = track.title; $('track-folder').value = track.folder;
+  $('track-form').onsubmit = async event => {
+    event.preventDefault();
+    const title = $('track-name').value.trim(), folder = $('track-folder').value.trim();
+    if (!title || !folder) return;
+    dialog.close();
+    const to = editedKey(track, title, folder);
+    if (to === track.id && title === track.title) return;
+    // R2 に移動は無く、写してから消すので大きな曲は数秒かかる。
+    toast('Saving…');
+    const r = await fetch(`/api/tracks/${encodeURIComponent(track.id)}`, { method: 'PATCH', body: JSON.stringify({ to, title }), headers: { ...authHeaders(), 'content-type': 'application/json' } });
+    if (r.ok) { toast(folder === track.folder ? 'Renamed' : `Moved to ${folder}`); await refresh(true); }
+    else toast(r.status === 409 ? `"${title}" is already in ${folder}` : `Edit failed (${r.status})`);
+  };
+  $('track-cancel').onclick = () => dialog.close();
+  dialog.showModal();
+  $('track-name').focus();
 }
 function durationOf(file) {
   return new Promise(resolve => {
@@ -747,6 +772,8 @@ async function refresh(force = false) {
       if (!response.ok) throw new Error(String(response.status));
       const body = await response.json();
       if (!Array.isArray(body.tracks)) throw new Error('invalid');
+      const moves = movedIDs(body.tracks);
+      if (moves.size) await followMoves(moves, body.tracks);
       libraryEtag = body.etag || '';
       cloud = { used: body.used || 0, limit: body.limit || 0 };
       tracks = mergeLibrary(body.tracks, tracks, savedIDs());
@@ -759,6 +786,22 @@ async function refresh(force = false) {
     finally { renderAll(); }
   })();
   try { await refreshing; } finally { refreshing = undefined; }
+}
+// 管理者が曲を改名・移動したら、元の key を今の key へ付け替える。対象は端末の保存（音声・歌詞）、プレイリスト、キュー。
+// 保存は写してから元を消す。写せなければ元を残す（通信なしでも聴ける状態を失わない）。
+async function followMoves(moves, remote) {
+  const byID = new Map(remote.map(track => [track.id, track]));
+  if (PL.followMoves(store, moves)) persistStore();
+  const copied = [];
+  for (const [from, to] of moves) {
+    if (known.has(from)) known.add(to);
+    if (saved.has(from) && byID.has(to) && (await copySaved(from, to))) copied.push([from, byID.get(to)]);
+  }
+  saved = await savedTracks();
+  // キューは写した後、元を消す前に付け替える。再生中の曲が消えた URL を読みに行かないように。
+  player.followMoves(moves, id => byID.get(id));
+  for (const [from, track] of copied) { await removeSaved(from); void saveCover(track); }
+  if (copied.length) saved = await savedTracks();
 }
 // 版が違えば更新。同じ版でも出し直し（built が違う）は更新。
 // 再生中でなければ黙って適用する。再生中はトーストで知らせ、勝手には読み込み直さない。

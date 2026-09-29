@@ -52,6 +52,18 @@ export async function removeSaved(id) {
   const cache = await caches.open(AUDIO_CACHE);
   return cache.delete(`/media/${encodeURIComponent(id)}`);
 }
+// 改名・移動された曲の保存を新しい key へ写す（元は呼び出し側が removeSaved で消す）。
+// 写せなければ false。そのときは元を残し、未保存扱いにはしない。
+export async function copySaved(from, to) {
+  try {
+    for (const [name, prefix] of [[AUDIO_CACHE, '/media/'], [LYRICS_CACHE, '/lyrics/']]) {
+      const cache = await caches.open(name);
+      const response = await cache.match(prefix + encodeURIComponent(from));
+      if (response && !(await cache.match(prefix + encodeURIComponent(to)))) await cache.put(prefix + encodeURIComponent(to), response);
+    }
+    return true;
+  } catch { return false; }
+}
 export async function clearSaved() {
   await caches.delete(LYRICS_CACHE);
   await caches.delete(AUDIO_CACHE);

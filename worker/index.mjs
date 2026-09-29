@@ -1,5 +1,5 @@
 // muu Worker: 静的 PWA と API を同一オリジンで配信する。API の一覧は docs/design.md 4 章。
-import { buildLibrary, etagFor, validName, isTrackKey, lyricsKeyFor, COVER_NAME } from './library.mjs';
+import { buildLibrary, etagFor, validName, isTrackKey, lyricsKeyFor, previousAfterMove, COVER_NAME } from './library.mjs';
 import { authorize } from './auth.mjs';
 import { VERSION, BUILT } from '../public/version.mjs';
 
@@ -39,6 +39,7 @@ async function api(request, env, ctx, rest, url) {
     const key = decodeURIComponent(path[0]);
     if (request.method === 'PUT') return withAuth(request, env, () => uploadTrack(request, env, ctx, key, url));
     if (request.method === 'DELETE') return withAuth(request, env, () => deleteTrack(env, ctx, key, url));
+    if (request.method === 'PATCH') return withAuth(request, env, () => editTrack(request, env, ctx, key, url));
     return fail(405, 'method_not_allowed');
   }
   if (resource === 'covers' && path.length === 1) {
@@ -209,6 +210,37 @@ async function deleteLyrics(env, ctx, key, url) {
   await env.MEDIA.delete(lyricsKey);
   forgetLibrary(ctx, url);
   return new Response(null, { status: 204 });
+}
+
+// 曲名の変更とフォルダの移動。本文 = { to: 新しい key, title }。
+// R2 に移動は無いので、写してから元を消す。歌詞（.txt）も一緒に移す。uploadedAt は保つ。
+// 新しい曲の customMetadata.previous に元の key を残し、端末が保存・プレイリスト・キューを付け替えられるようにする。
+async function editTrack(request, env, ctx, key, url) {
+  if (!isTrackKey(key)) return fail(400, 'invalid_key');
+  let body;
+  try { body = await request.json(); } catch { return fail(400, 'invalid_body'); }
+  const to = String(body?.to || '');
+  const title = String(body?.title || '').trim();
+  if (!isTrackKey(to)) return fail(400, 'invalid_key');
+  const [folder, file] = to.split('/');
+  if (!validName(folder) || !validName(file, { extension: 'mp3' })) return fail(400, 'invalid_key');
+  if (!title || title.length > 200) return fail(400, 'invalid_title');
+  const moved = to !== key;
+  if (moved && (await env.MEDIA.head(to))) return fail(409, 'exists');
+  const source = await env.MEDIA.get(key);
+  if (!source) return fail(404, 'not_found');
+  const meta = source.customMetadata || {};
+  if (!moved && meta.title === title) { await source.body.cancel(); return json({ id: key, folder, title }); }
+  const customMetadata = { ...meta, title };
+  if (moved) customMetadata.previous = previousAfterMove(key, meta.previous);
+  await env.MEDIA.put(to, source.body.pipeThrough(new FixedLengthStream(source.size)), { httpMetadata: source.httpMetadata, customMetadata });
+  if (moved) {
+    const words = await env.MEDIA.get(lyricsKeyFor(key));
+    if (words) await env.MEDIA.put(lyricsKeyFor(to), await words.text(), { httpMetadata: words.httpMetadata });
+    await env.MEDIA.delete([key, lyricsKeyFor(key)]);
+  }
+  forgetLibrary(ctx, url);
+  return json({ id: to, folder, title });
 }
 
 async function deleteTrack(env, ctx, key, url) {

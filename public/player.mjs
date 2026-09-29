@@ -58,6 +58,18 @@ export class Player {
     for (const item of this.queue) { const fresh = lookup(item.track.id); if (fresh && fresh !== item.track) { item.track = fresh; touched = true; } }
     if (touched) { this.changed(); this.save(); }
   }
+  // 改名・移動された曲を新しい key に付け替える。今の曲なら同じ位置・同じ再生状態で新しい URL から読み直す。
+  followMoves(moves, lookup) {
+    let current = false, touched = false;
+    for (const item of this.queue) {
+      const fresh = moves.has(item.track.id) && lookup(moves.get(item.track.id));
+      if (!fresh) continue;
+      if (item === this.item) current = true;
+      item.track = fresh; touched = true;
+    }
+    if (current) this.load(!this.audio.paused, this.pendingPosition || this.audio.currentTime || 0);
+    else if (touched) { this.changed(); this.save(); }
+  }
   start(tracks, id) {
     this.failed.clear(); this.history = [];
     this.queue = tracks.map(entry);

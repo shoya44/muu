@@ -208,6 +208,19 @@
   </form>
 </dialog>
 
+<!-- 管理画面の曲ごとの編集。曲名（ファイル名と歌詞も合わせる）とフォルダ（移動）。 -->
+<dialog id="track-editor" class="dialog">
+  <form id="track-form" method="dialog" class="track-form">
+    <h3>Edit track</h3>
+    <input id="track-name" aria-label="Title" placeholder="Title" maxlength="150" required>
+    <input id="track-folder" list="folders" aria-label="Folder" placeholder="Folder" maxlength="100" required>
+    <div class="dialog-actions">
+      <button type="button" id="track-cancel" class="text-button">Cancel</button>
+      <button type="submit" class="text-button">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="picker" class="dialog">
   <h3 id="picker-title">Add to playlist</h3>
   <div id="picker-list" class="picker"></div>

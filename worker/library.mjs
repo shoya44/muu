@@ -2,6 +2,7 @@
 // key = "<folder>/<file>.mp3" が曲、"<folder>/cover.jpg" がフォルダのカバー。
 // "<folder>/<file>.txt" は同名の曲の歌詞。曲が無ければ無視する。
 // 属性（title, duration）が欠ける曲や空ファイルは「壊れたデータ」として一覧に出さない。
+// 改名・移動した曲は customMetadata.previous に元の key（JSON 配列、新しい順）を持つ。端末はそれで保存やプレイリストを付け替える。
 
 export const COVER_NAME = 'cover.jpg';
 
@@ -30,6 +31,17 @@ export function isLyricsKey(key) {
   return Boolean(parts) && /\.txt$/i.test(parts.file);
 }
 
+// 改名・移動の履歴。customMetadata は合計 2 KB までなので、古いものから落として収める。
+export const PREVIOUS_BYTES = 1000;
+export function parsePrevious(value) {
+  try { const list = JSON.parse(value || '[]'); return Array.isArray(list) ? list.filter(isTrackKey) : []; } catch { return []; }
+}
+export function previousAfterMove(from, value) {
+  const list = [from, ...parsePrevious(value).filter(key => key !== from)];
+  while (list.length > 1 && new TextEncoder().encode(JSON.stringify(list)).length > PREVIOUS_BYTES) list.pop();
+  return JSON.stringify(list);
+}
+
 export function buildLibrary(objects) {
   const covers = new Set();
   const lyrics = new Set();
@@ -44,6 +56,7 @@ export function buildLibrary(objects) {
     const duration = Number(meta.duration);
     if (!meta.title || !Number.isFinite(duration) || duration <= 0) continue;
     const { folder } = splitKey(object.key);
+    const previous = parsePrevious(meta.previous);
     tracks.push({
       id: object.key,
       folder,
@@ -53,6 +66,7 @@ export function buildLibrary(objects) {
       uploadedAt: meta.uploadedAt || (object.uploaded instanceof Date ? object.uploaded.toISOString() : String(object.uploaded || '')),
       cover: covers.has(folder),
       lyrics: lyrics.has(lyricsKeyFor(object.key).toLowerCase()),
+      ...(previous.length ? { previous } : {}),
     });
   }
   tracks.sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : a.uploadedAt > b.uploadedAt ? -1 : a.id.localeCompare(b.id)));
@@ -60,7 +74,7 @@ export function buildLibrary(objects) {
 }
 
 export async function etagFor(tracks) {
-  const text = tracks.map(track => `${track.id}:${track.size}:${track.uploadedAt}:${track.cover ? 1 : 0}:${track.lyrics ? 1 : 0}`).join('\n');
+  const text = tracks.map(track => `${track.id}:${track.title}:${track.size}:${track.uploadedAt}:${track.cover ? 1 : 0}:${track.lyrics ? 1 : 0}`).join('\n');
   const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
   return `"${[...new Uint8Array(digest)].slice(0, 10).map(byte => byte.toString(16).padStart(2, '0')).join('')}"`;
 }
