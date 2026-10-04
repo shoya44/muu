@@ -57,7 +57,7 @@ async function api(request, env, ctx, rest, url) {
   if (resource === 'stats' && !path.length) {
     // 再生数。読むのも数えるのも誰でも（Details で使う）。
     if (request.method !== 'GET') return fail(405, 'method_not_allowed');
-    return json({ plays: await readPlays(env.MEDIA) });
+    return json(await readPlays(env.MEDIA));
   }
   if (resource === 'plays' && !path.length) {
     if (request.method !== 'POST') return fail(405, 'method_not_allowed');

@@ -5,9 +5,9 @@ import { icon } from './icons.mjs';
 import { setupSheet } from './sheet.mjs';
 import { setupPopover } from './popover.mjs';
 import { makeSortable } from './drag.mjs';
-import { arrange, nextSort, SORTS, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey } from './library.mjs';
+import { arrange, nextSort, SORTS, SORT_LABEL, mediaURL, coverURL, lyricsURL, megabytes, bytesLabel, time, durationLabel, agoLabel, saveControl, mergeLibrary, safeFileName, titleOf, isMP3, isText, lyricsTarget, groupUploads, groupByFolder, tracksLabel, movedIDs, editedKey } from './library.mjs';
 import * as PL from './playlists.mjs';
-import { loadPlays, recordPlay, flushPlays, unsent, followMoves as followPlayMoves } from './plays.mjs';
+import { loadPlays, recordPlay, flushPlays, unsent, unsentLast, followMoves as followPlayMoves } from './plays.mjs';
 import { VERSION, BUILT } from './version.mjs';
 
 const $ = id => document.getElementById(id);
@@ -65,7 +65,11 @@ const savedIDs = () => new Set(saved.keys());
 const playableNow = track => saved.has(track.id) || (navigator.onLine && !track.gone);
 
 // ---- ナビゲーション ----
+// タブごとにスクロール位置を覚え、戻ったら続きから。開いているタブをもう一度押したら先頭へ。
+const scrolls = {};
 function show(view) {
+  const same = view === openView;
+  scrolls[openView] = window.scrollY;
   openView = view;
   for (const section of document.querySelectorAll('.view')) section.hidden = section.dataset.view !== view;
   for (const button of document.querySelectorAll('.nav-item')) button.classList.toggle('on', button.dataset.nav === view);
@@ -73,23 +77,46 @@ function show(view) {
   popover.close();
   if (view === 'settings') renderSettings();
   if (view === 'playlists') renderPlaylists();
-  window.scrollTo(0, 0);
+  window.scrollTo(0, same ? 0 : scrolls[view] || 0);
 }
 for (const button of document.querySelectorAll('.nav-item')) button.onclick = () => {
-  if (button.dataset.nav === 'playlists' && openView === 'playlists' && currentPlaylist) { currentPlaylist = null; renderPlaylists(); }
+  if (button.dataset.nav === 'playlists' && openView === 'playlists' && currentPlaylist) { closePlaylist(); return; }
   show(button.dataset.nav);
 };
+
+// ---- 戻る操作（Android の戻るボタン・ジェスチャー） ----
+// 再生画面、ダイアログ、プレイリストの中、複数選択を開くたびに履歴を 1 つ積む。戻るはいちばん上を閉じるだけで、アプリは閉じない。
+// 画面のボタンで閉じたときは、積んだ分を黙って戻す。
+const layers = [];
+let skipPops = 0;
+function pushLayer(close) { layers.push(close); history.pushState({ muu: layers.length }, ''); }
+function dropLayer(close) {
+  const at = layers.lastIndexOf(close);
+  if (at < 0) return;
+  layers.splice(at, 1); skipPops++; history.back();
+}
+window.addEventListener('popstate', () => { if (skipPops) { skipPops--; return; } layers.pop()?.(); });
+for (const dialog of document.querySelectorAll('dialog')) {
+  // Cancel と同じ閉じ方にする（開いた側の後始末が走るように）。
+  const close = () => { if (dialog.requestClose) dialog.requestClose(); else dialog.close(); };
+  new MutationObserver(() => { if (dialog.open) pushLayer(close); else dropLayer(close); }).observe(dialog, { attributes: true, attributeFilter: ['open'] });
+}
+function openPlaylist(id) { if (!currentPlaylist) pushLayer(closePlaylistLayer); currentPlaylist = id; renderPlaylists(); $('fab-add').hidden = false; }
+function closePlaylistLayer() { currentPlaylist = null; renderPlaylists(); $('fab-add').hidden = true; }
+function closePlaylist() { dropLayer(closePlaylistLayer); closePlaylistLayer(); }
 
 // ---- プレイヤー ----
 const player = new Player($('audio'), { changed: renderPlayer, message: toast, persist: state => writeState('player', state).catch(() => {}), played: track => countPlay(track) });
 // 再生数。全端末が数えて送り、見るのは Details だけ（誰でも）。
 // 回数は Details を開いたときに /api/stats から取る。見せる数はサーバーの合計に、この端末でまだ届いていない回数を足したもの。
-let stats = null;
+let stats = null, lastPlayed = {};
 const playsOf = track => (stats?.[track.id] || 0) + unsent(track.id);
+// 最後に聴かれた時刻。サーバーの値と、この端末でまだ届いていない分の新しい方。
+const lastOf = track => Math.max(lastPlayed[track.id] || 0, unsentLast(track.id));
 async function loadStats() {
   try {
     const r = await fetch('/api/stats', { cache: 'no-store' });
-    if (r.ok) stats = (await r.json()).plays || {};
+    if (r.ok) { const body = await r.json(); stats = body.plays || {}; lastPlayed = body.last || {}; }
   } catch { /* オフライン: 前回取った回数のまま（無ければ出さない） */ }
 }
 async function countPlay(track) { await recordPlay(track.id); void sendPlays(); }
@@ -100,10 +127,29 @@ const openPlayer = () => { if ($('lyrics-full').open) $('lyrics-full').close(); 
 $('mini-open').onclick = openPlayer;
 $('sheet-close').onclick = () => $('now').close();
 // ミニプレイヤーを上へスワイプしても開く。シークバーの上で始まった指は除く。
-let swipe;
-$('mini').addEventListener('pointerdown', e => { if (e.target !== $('mini-seek')) swipe = { y: e.clientY, id: e.pointerId }; });
-$('mini').addEventListener('pointermove', e => { if (swipe && e.pointerId === swipe.id && swipe.y - e.clientY > 40) { swipe = undefined; openPlayer(); } });
-$('mini').addEventListener('pointerup', () => { swipe = undefined; });
+// 左右へのスワイプは曲送り（左で次、右で前）。曲名だけ指に付いて動く。
+let swipe, swiped = false;
+const SKIP = 60;
+const settle = () => { $('mini-title').style.transform = ''; swipe = undefined; };
+$('mini').addEventListener('pointerdown', e => { if (e.target !== $('mini-seek')) { swipe = { x: e.clientX, y: e.clientY, id: e.pointerId }; swiped = false; } });
+$('mini').addEventListener('pointermove', e => {
+  if (!swipe || e.pointerId !== swipe.id) return;
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  if (!swipe.sideways && -dy > 40 && -dy > Math.abs(dx)) { settle(); openPlayer(); return; }
+  if (!swipe.sideways && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) swipe.sideways = true;
+  if (swipe.sideways) $('mini-title').style.transform = `translateX(${dx}px)`;
+});
+$('mini').addEventListener('pointerup', e => {
+  if (swipe?.sideways && e.pointerId === swipe.id) {
+    const dx = e.clientX - swipe.x;
+    swiped = true;
+    if (dx <= -SKIP) player.next(); else if (dx >= SKIP) player.previousTrack();
+  }
+  settle();
+});
+$('mini').addEventListener('pointercancel', settle);
+// 横へ動かした指を離したときのクリックで、再生画面や曲送りのボタンが反応しないように。
+$('mini').addEventListener('click', e => { if (swiped) { swiped = false; e.stopPropagation(); e.preventDefault(); } }, true);
 for (const button of document.querySelectorAll('[data-player]')) button.onclick = () => player[button.dataset.player]();
 $('shuffle').onclick = () => player.setShuffle(!player.shuffle);
 $('repeat').onclick = () => player.setRepeat(!player.repeat);
@@ -123,7 +169,7 @@ function renderPlayer() {
   $('mini').hidden = !track;
   if (!track) return;
   $('mini-title').textContent = $('now-title').textContent = track.title;
-  const paused = player.audio.paused;
+  const paused = !player.playing;
   const cover = coverURL(track) || '/cover-placeholder.svg';
   const image = $('sheet-cover');
   if (image.dataset.source !== cover) { image.dataset.source = cover; image.src = cover; image.onerror = () => { image.src = '/cover-placeholder.svg'; image.classList.add('placeholder'); }; }
@@ -280,6 +326,7 @@ function renderDetails(track) {
     ['Plays', counted ? String(plays) : '-'],
     ['Rank', stats && plays && !track.gone ? `${rank} / ${listed.length}` : '-'],
     ['Listened', plays && track.duration ? (plays * track.duration < 60 ? time(plays * track.duration) : durationLabel(plays * track.duration)) : '-'],
+    ['Last played', lastOf(track) ? agoLabel(lastOf(track)) : '-'],
     ['Size', megabytes(track.size)],
     ['Bitrate', track.duration ? `${Math.round((track.size * 8) / track.duration / 1000)} kbps` : '-'],
     ['Added', track.uploadedAt ? new Date(track.uploadedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '-'],
@@ -382,9 +429,10 @@ function longPress(element, run) {
   element.addEventListener('pointerup', clear); element.addEventListener('pointercancel', clear);
   element.addEventListener('click', e => { if (element.dataset.held) { delete element.dataset.held; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
 }
-function startSelect(id) { selecting = new Set([id]); if (navigator.vibrate) navigator.vibrate(10); renderHome(); }
+function startSelect(id) { selecting = new Set([id]); pushLayer(closeSelectLayer); if (navigator.vibrate) navigator.vibrate(10); renderHome(); }
 function toggleSelect(id) { if (selecting.has(id)) selecting.delete(id); else selecting.add(id); renderHome(); }
-function endSelect() { selecting = null; renderHome(); }
+function closeSelectLayer() { selecting = null; renderHome(); }
+function endSelect() { dropLayer(closeSelectLayer); closeSelectLayer(); }
 $('select-close').onclick = endSelect;
 $('select-all').onclick = () => { const all = homeTracks(); selecting = new Set(selecting.size === all.length ? [] : all.map(t => t.id)); renderHome(); };
 $('select-add').onclick = () => { if (selecting.size) pickPlaylist([...selecting], endSelect); };
@@ -490,7 +538,7 @@ function cardFor(playlist) {
   const count = document.createElement('span'); count.className = 'card-count';
   count.textContent = `${tracksLabel(playlist.trackIds.length)}${rows.length ? ` / ${durationLabel(rows.reduce((sum, track) => sum + (track.duration || 0), 0))}` : ''}`;
   card.append(name, count);
-  card.onclick = () => { currentPlaylist = playlist.id; renderPlaylists(); $('fab-add').hidden = false; };
+  card.onclick = () => openPlaylist(playlist.id);
   return card;
 }
 function renderPlaylists() {
@@ -523,7 +571,7 @@ makeSortable($('playlist-tracks'), { itemSelector: '.track', handleSelector: '.t
   playlist.trackIds = [...shown, ...hidden];
   persistStore();
 } });
-$('playlist-back').onclick = () => { currentPlaylist = null; renderPlaylists(); };
+$('playlist-back').onclick = closePlaylist;
 $('playlist-new').onclick = async () => { const n = await prompt('Playlist name'); if (n) { PL.createPlaylist(store, n); persistStore(); renderPlaylists(); } };
 const openPlaylistRows = () => { const playlist = store.playlists.find(p => p.id === currentPlaylist); return playlist ? PL.resolveTracks(playlist, trackByID, saved) : []; };
 $('playlist-play').onclick = () => { const c = openPlaylistRows().filter(playableNow); if (c.length) { player.setShuffle(false); player.start(c, c[0].id); } else toast('Nothing to play'); };
@@ -533,7 +581,7 @@ $('playlist-menu').onclick = () => {
   if (!playlist) return;
   popover.open($('playlist-menu'), [
     { icon: 'queue_music', label: 'Rename', run: async () => { const n = await prompt('Playlist name', playlist.name); if (n) { PL.rename(playlist, n); persistStore(); renderPlaylists(); } } },
-    { icon: 'delete', label: 'Delete playlist', danger: true, run: async () => { if (await confirm(`Delete "${playlist.name}"? Saved audio stays on this device.`, { ok: 'Delete' })) { PL.removePlaylist(store, playlist.id); currentPlaylist = null; persistStore(); renderPlaylists(); } } },
+    { icon: 'delete', label: 'Delete playlist', danger: true, run: async () => { if (await confirm(`Delete "${playlist.name}"? Saved audio stays on this device.`, { ok: 'Delete' })) { PL.removePlaylist(store, playlist.id); closePlaylist(); persistStore(); renderPlaylists(); } } },
   ]);
 };
 function pickPlaylist(ids, done = () => {}) {
@@ -616,8 +664,22 @@ async function renderSettings() {
   $('clear-saved').hidden = !saved.size;
   $('password-state').textContent = adminOK ? 'Unlocked' : settings.password ? 'Checking…' : 'Enter the password to upload or delete.';
   $('admin').hidden = !adminOK;
-  if (adminOK) renderAdmin();
+  $('recent-card').hidden = !adminOK;
+  if (adminOK) { renderAdmin(); renderRecent(); if ($('recent-card').open) void loadStats().then(renderRecent); }
 }
+// Recently played（管理者だけ）。全員の再生を、最後に聴かれた順に 50 曲まで。開いたときに取り直す。
+function renderRecent() {
+  const recent = tracks.filter(track => !track.gone && lastOf(track)).sort((a, b) => lastOf(b) - lastOf(a)).slice(0, 50);
+  $('recent-empty').hidden = recent.length > 0;
+  $('recent-list').replaceChildren(...recent.map(track => {
+    const row = document.createElement('div'); row.className = 'track';
+    const info = document.createElement('span'); info.className = 'track-info'; info.style.padding = '0 12px';
+    const title = document.createElement('span'); title.className = 'track-title'; title.textContent = track.title;
+    const meta = document.createElement('span'); meta.className = 'track-meta'; meta.textContent = `${agoLabel(lastOf(track))} · ${track.folder}`;
+    info.append(title, meta); row.append(info); return row;
+  }));
+}
+$('recent-card').addEventListener('toggle', () => { if ($('recent-card').open) void loadStats().then(renderRecent); });
 $('clear-saved').onclick = async () => {
   if (!(await confirm(`Remove all ${saved.size} saved tracks from this device?`, { ok: 'Remove all' }))) return;
   player.pause(); await clearSaved(); await refreshSaved(); toast('Removed all');
@@ -847,13 +909,15 @@ async function followMoves(moves, remote) {
 }
 // 版が違えば更新。同じ版でも出し直し（built が違う）は更新。
 // 再生中でなければ黙って適用する。再生中はトーストで知らせ、勝手には読み込み直さない。
-async function checkUpdate(manual = false) {
+// 黙って読み込み直すのは、起動直後か、曲を読み込んでいないときだけ。復帰のたびに読み込み直すと、
+// 割り込みで止まっていた曲やロック画面・AirPods の操作先（Now Playing）が失われる。
+async function checkUpdate(manual = false, { launch = false } = {}) {
   try {
     const { version, built } = await (await fetch('/version.json', { cache: 'no-store' })).json();
     const newer = version && (version !== VERSION || (built && BUILT && built !== BUILT));
     if (newer) {
       // 黙って適用するのはセッションに一度だけ。取得に失敗して読み込み直しを繰り返さないため。
-      if ((player.audio.paused || !player.track) && !sessionStorage.getItem('muu-auto-update')) {
+      if ((launch ? !player.playing : !player.track) && !sessionStorage.getItem('muu-auto-update')) {
         sessionStorage.setItem('muu-auto-update', '1'); applyUpdate(); return;
       }
       if (announcedUpdate && !manual) return;
@@ -928,7 +992,7 @@ async function start() {
   await refresh(true);
   $('loading').hidden = true;
   void verifyPassword();
-  void checkUpdate();
+  void checkUpdate(false, { launch: true });
   void sendPlays();
   window.addEventListener('online', () => { refresh(); sendPlays(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); checkUpdate(); sendPlays(); } });

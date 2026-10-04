@@ -109,6 +109,13 @@
       </div>
     </details>
 
+    <!-- 管理者だけ。全員の再生を、最後に聴かれた順に。誰が聴いたかは持たない。 -->
+    <details id="recent-card" class="card" data-section="recent" hidden>
+      <summary><span data-icon="history"></span>Recently played<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
+      <div id="recent-list" class="saved-list"></div>
+      <p id="recent-empty" class="muted" hidden>No plays yet.</p>
+    </details>
+
     <details class="card" data-section="app">
       <summary><span data-icon="info"></span>App<span class="spacer"></span><span data-icon="keyboard_arrow_down" class="chevron"></span></summary>
       <div class="row"><span>Version</span><span id="version" class="muted"></span></div>

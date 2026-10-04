@@ -134,6 +134,8 @@ body.no-mini .fab { bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 
 
 /* Mini player: 1 行の操作と、その下の細いシーク。カバーは置かない。 */
 .mini { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 12px); width: min(calc(100% - 20px), 704px); height: var(--muu-mini-height); background: var(--md-sys-color-surface-container-high); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); display: flex; align-items: flex-start; gap: 0; padding: 0 4px 0 0; z-index: 8; box-shadow: var(--muu-elevation); }
+/* 上・左右のスワイプはミニプレイヤー自身の操作。ページのスクロールに取られないように。 */
+.mini { touch-action: none; }
 .mini > .icon { height: 46px; min-height: 46px; }
 .mini-open { flex: 1; min-width: 0; justify-content: flex-start; padding: 0 0 0 16px; border-radius: 0; height: 46px; min-height: 46px; }
 .mini-open:hover, .mini-open:active { background: transparent !important; transform: none !important; }

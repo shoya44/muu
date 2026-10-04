@@ -32,7 +32,7 @@ wrangler.toml           name, assets, r2_buckets, vars
 <folder>/<file>.mp3   customMetadata: title, duration(秒), uploadedAt(ISO), previous(改名・移動前の key の JSON 配列。新しい順、1 KB まで)
 <folder>/<file>.txt   同名の曲の歌詞（UTF-8、64 KB まで、改行は LF に正規化）
 <folder>/cover.jpg
-_stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最近受け付けた送信 ID] }。フォルダ直下ではないので曲として出ない
+_stats.json           再生数 { plays: { <曲の key>: 回数 }, last: { <曲の key>: 最後に聴かれた時刻 }, batches: [最近受け付けた送信 ID] }。フォルダ直下ではないので曲として出ない
 ```
 
 - 楽曲 ID = オブジェクト key。URL エンコードしてパスに載せる。
@@ -53,8 +53,8 @@ _stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最
 | DELETE /api/lyrics/:id | パスワード | 歌詞の削除。存在しなくても 204 |
 | PATCH /api/tracks/:id | パスワード | 曲名の変更・フォルダの移動。本文 = `{ to, title }`（to は新しい key）。写してから元を消し、歌詞も移す。uploadedAt は保ち、previous に元の key を足す。移動先が有れば 409 |
 | DELETE /api/tracks/:id | パスワード | 削除。歌詞も一緒に消す。存在しなくても 204 |
-| GET /api/stats | なし | 再生数 `{ plays: { id: 回数 } }`。Details を開いたときに読む |
-| POST /api/plays | なし（越境要求は拒否） | 再生数の報告。本文 = `{ batch, plays: { id: 回数 } }`。同じ batch は一度だけ数える。`_stats.json` を条件付き書き込み（etag 一致）で更新し、衝突したら読み直す |
+| GET /api/stats | なし | 再生数と最後に聴かれた時刻 `{ plays: { id: 回数 }, last: { id: ms } }`。Details と Recently played を開いたときに読む |
+| POST /api/plays | なし（越境要求は拒否） | 再生数の報告。本文 = `{ batch, plays: { id: 回数 }, last?: { id: ms } }`（last は未来なら受け取った時刻に丸める）。同じ batch は一度だけ数える。`_stats.json` を条件付き書き込み（etag 一致）で更新し、衝突したら読み直す |
 | POST /api/auth | パスワード | パスワードの確認のみ。何も変更しない |
 | GET /version.json | なし | `{ version, built }`。Worker が返す |
 
@@ -66,7 +66,7 @@ _stats.json           再生数 { plays: { <曲の key>: 回数 }, batches: [最
 
 - `app.mjs`：画面全部（Home、Playlists、Settings、再生画面、ダイアログ）、一覧の同期、アップロード（`File` を `<audio>` の `loadedmetadata` で秒数解析 → PUT。フォルダのドロップ / 選択は `groupUploads` でフォルダごとにまとめて順に送る）、更新確認。
 - `library.mjs`：ソート、表示用の整形（時間・容量のラベル）、一覧のマージ。純粋関数のみでテスト対象。
-- `player.mjs`：`<audio>` 1 個、キュー、シャッフル、リピート（全曲）、Media Session、前回状態の復元。
+- `player.mjs`：`<audio>` 1 個、キュー、シャッフル、リピート（全曲）、Media Session（位置も渡す）、iOS の Audio Session（playback、割り込み明けの再開）、前回状態の復元。曲の差し替えでは先に pause() しない。割り込み後・60 秒以上止めた後の再開は今の位置から読み直す。
 - `storage.mjs`：IndexedDB 1 ストア（`state`）の読み書きと、Cache Storage の音声索引・使用量（`navigator.storage.estimate()` と実サイズを別に持つ）。
 - `downloads.mjs`：音声とカバーの保存。完全に受信できたときだけ Cache に入れる。
 - `plays.mjs`：再生数の送信待ち。数えた回数を IndexedDB に貯め、送信 ID を付けてまとめて送る。数えるのは `player.mjs`（30 秒か半分）。

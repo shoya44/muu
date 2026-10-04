@@ -4,9 +4,9 @@ import { parseStats, validReport, addReport, moveCount, updateStats, STATS_KEY }
 import { buildLibrary } from '../../worker/library.mjs';
 
 test('stats: broken or missing data reads as zero plays', () => {
-  assert.deepEqual(parseStats(''), { plays: {}, batches: [] });
-  assert.deepEqual(parseStats('{oops'), { plays: {}, batches: [] });
-  assert.deepEqual(parseStats('{"plays":{"a/1.mp3":3,"bad":2,"a/2.mp3":-1,"a/3.mp3":1.5},"batches":["x",1]}'), { plays: { 'a/1.mp3': 3 }, batches: ['x'] });
+  assert.deepEqual(parseStats(''), { plays: {}, last: {}, batches: [] });
+  assert.deepEqual(parseStats('{oops'), { plays: {}, last: {}, batches: [] });
+  assert.deepEqual(parseStats('{"plays":{"a/1.mp3":3,"bad":2,"a/2.mp3":-1,"a/3.mp3":1.5},"last":{"a/1.mp3":5,"a/2.mp3":6,"bad":7},"batches":["x",1]}'), { plays: { 'a/1.mp3': 3 }, last: { 'a/1.mp3': 5 }, batches: ['x'] });
 });
 
 test('stats: reports are checked strictly', () => {
@@ -51,4 +51,17 @@ test('the public library never carries play counts, and the stats object is not 
   const tracks = buildLibrary(obj);
   assert.equal(tracks.length, 1);
   assert.equal('plays' in tracks[0], false);
+});
+
+test('stats: last played keeps the latest time, follows moves, and ignores bad or future times', () => {
+  assert.deepEqual(validReport({ batch: 'abcdefgh', plays: { 'a/1.mp3': 1 }, last: { 'a/1.mp3': 99, 'a/2.mp3': 5 } }, 50).last, { 'a/1.mp3': 50 });
+  assert.deepEqual(validReport({ batch: 'abcdefgh', plays: { 'a/1.mp3': 1 }, last: { 'a/1.mp3': 'x' } }).last, {});
+  assert.deepEqual(validReport({ batch: 'abcdefgh', plays: { 'a/1.mp3': 1 } }).last, {});
+  let stats = addReport(parseStats(''), validReport({ batch: 'batch-0001', plays: { 'a/1.mp3': 1 }, last: { 'a/1.mp3': 20 } }, 100));
+  stats = addReport(stats, validReport({ batch: 'batch-0002', plays: { 'a/1.mp3': 1 }, last: { 'a/1.mp3': 10 } }, 100));
+  assert.deepEqual(stats.last, { 'a/1.mp3': 20 });
+  stats = moveCount(stats, 'a/1.mp3', 'b/1.mp3');
+  assert.deepEqual(stats.last, { 'b/1.mp3': 20 });
+  stats = moveCount(stats, 'b/1.mp3', null);
+  assert.deepEqual(stats.last, {});
 });

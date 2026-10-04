@@ -3,6 +3,9 @@ import { mediaURL, coverURL } from './library.mjs';
 
 let counter = 0;
 const entry = track => ({ key: `q${Date.now().toString(36)}${(counter++).toString(36)}`, track });
+// これより長く止めていた曲は、再開のとき音声を読み直す。iOS は止まっている間に音声の経路を手放し、
+// そのまま play() すると「再生中なのに無音」になることがある。保存済みなら Cache から読むので一瞬で済む。
+const STALE_AFTER = 60 * 1000;
 
 export class Player {
   constructor(audio, { changed, message, persist, played = () => {} }) {
@@ -11,26 +14,64 @@ export class Player {
     this.queue = []; this.order = []; this.history = [];
     this.index = -1; this.pendingPosition = 0; this.failed = new Set(); this.wantsPlayback = false;
     this.shuffle = false; this.repeat = false;
+    // switching: 曲を差し替えて鳴り始めるまで。この間は止まって見えても「再生中」として扱う（ロック画面が一時停止に戻らない）。
+    // stale: 次の再開で音声を読み直す。外から止められた（他のアプリ、着信、Siri）か、長く止めていたとき。
+    this.switching = false; this.stale = false; this.pausedAt = 0;
     audio.addEventListener('loadedmetadata', () => {
       if (this.pendingPosition) audio.currentTime = Math.min(this.pendingPosition, Math.max(0, audio.duration - 0.2));
-      this.pendingPosition = 0; changed();
+      this.pendingPosition = 0; changed(); this.updatePosition();
     });
-    for (const type of ['play', 'pause', 'durationchange']) audio.addEventListener(type, () => { if (type === 'play') this.configureMediaSession(); changed(); this.save(); });
+    for (const type of ['play', 'pause', 'durationchange']) audio.addEventListener(type, () => { if (type === 'play') this.configureMediaSession(); changed(); this.save(); this.updatePosition(); });
     audio.addEventListener('timeupdate', () => { this.tally(); changed(); if (Date.now() - (this.lastSave || 0) > 3000) this.save(); });
     audio.addEventListener('play', () => this.mark());
-    audio.addEventListener('pause', () => this.tally());
-    audio.addEventListener('seeked', () => { this.mark(); this.save(); });
+    audio.addEventListener('playing', () => { this.switching = false; this.stale = false; changed(); });
+    audio.addEventListener('pause', () => {
+      this.tally(); this.pausedAt = Date.now();
+      // 自分で止めていないのに止まった（曲の終わりを除く）。iOS の割り込みなど。再開のときに読み直す。
+      if (this.wantsPlayback && !this.switching && !audio.ended) this.stale = true;
+    });
+    // 差し替え直後の play() が通らなかったとき（バックグラウンドで読み込みが間に合わない等）、読めた時点でもう一度。
+    audio.addEventListener('canplay', () => { if (this.switching && this.wantsPlayback && audio.paused) audio.play().catch(() => {}); });
+    audio.addEventListener('seeked', () => { this.mark(); this.save(); this.updatePosition(); });
+    audio.addEventListener('ratechange', () => this.updatePosition());
     audio.addEventListener('ended', () => { this.tally(); this.next(); });
     audio.addEventListener('error', () => {
+      this.switching = false;
       if (!this.track) return;
       if (!this.failed.has(this.track.id)) { this.failed.add(this.track.id); message(`Can't play: ${this.track.title}`); }
       if (this.wantsPlayback) this.next();
     });
     this.configureMediaSession();
+    this.configureAudioSession();
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save(); });
   }
   get item() { return this.queue[this.index]; }
   get track() { return this.queue[this.index]?.track; }
+  // 曲の差し替え中も含めて、鳴っている（鳴らそうとしている）か。表示とロック画面はこちらを見る。
+  get playing() { return !this.audio.paused || (this.switching && this.wantsPlayback); }
+
+  // iOS（Safari 17 以降）の Audio Session。音楽として扱わせ、他のアプリに割り込まれて終わったら続きから戻る。
+  // 利用者が自分で止めていなければ（wantsPlayback のまま）再開する。止めていたら何もしない。
+  configureAudioSession() {
+    const session = navigator.audioSession;
+    if (!session) return;
+    try { session.type = 'playback'; } catch { /* unsupported */ }
+    // 戻すのは割り込みが明けたときだけ。イヤホンを外したとき（経路の変更）は止まったままにする。
+    let interrupted = false;
+    session.addEventListener?.('statechange', () => {
+      if (session.state === 'interrupted') { interrupted = true; this.stale = true; return; }
+      if (!interrupted) return;
+      interrupted = false;
+      if (this.wantsPlayback && this.audio.paused && this.track) this.play();
+    });
+  }
+  // ロック画面・通知のシークバーと経過時間。
+  updatePosition() {
+    if (!navigator.mediaSession?.setPositionState) return;
+    const duration = this.audio.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    try { navigator.mediaSession.setPositionState({ duration, position: Math.min(this.audio.currentTime || 0, duration), playbackRate: this.audio.playbackRate || 1 }); } catch { /* unsupported */ }
+  }
 
   configureMediaSession() {
     if (!('mediaSession' in navigator)) return;
@@ -147,11 +188,16 @@ export class Player {
     this.index = index; this.load(true);
   }
 
-  load(autoplay, position = 0) {
+  // 曲を読み込む。先に pause() を呼ばない。iOS はロック画面からの曲送りの途中で一度でも止まると、
+  // 音声の経路を手放して次の play() が無音になることがある。src の差し替えだけで前の曲は止まる。
+  // keepCount: 同じ曲の読み直し（再開）。再生数の途中経過を捨てない。
+  load(autoplay, position = 0, { keepCount = false } = {}) {
     if (!this.track) return;
-    this.wantsPlayback = autoplay;
-    this.listened = 0; this.counted = false; this.mark(position);
-    this.audio.pause(); this.pendingPosition = position;
+    this.wantsPlayback = autoplay; this.switching = autoplay; this.stale = false;
+    if (!keepCount) { this.listened = 0; this.counted = false; }
+    this.mark(position);
+    this.pendingPosition = position;
+    if (!autoplay) this.audio.pause();
     this.audio.src = mediaURL(this.track); this.audio.load();
     if ('mediaSession' in navigator) {
       const cover = coverURL(this.track);
@@ -165,12 +211,17 @@ export class Player {
   }
   async play() {
     if (!this.track) return;
+    // 割り込まれた後や長く止めていた後は、今の位置から読み直して鳴らす（無音で進むのを避ける）。
+    const stale = this.audio.paused && !this.switching && this.audio.currentSrc
+      && (this.stale || (this.pausedAt && Date.now() - this.pausedAt > STALE_AFTER));
+    // 曲の終わりで止まっていたなら頭から（play() と同じ）。
+    if (stale) { this.load(true, this.audio.ended ? 0 : this.audio.currentTime || 0, { keepCount: !this.audio.ended }); return; }
     this.wantsPlayback = true;
     try { await this.audio.play(); }
-    catch (error) { if (error.name !== 'AbortError') this.message('Tap play to start'); }
+    catch (error) { if (error.name !== 'AbortError') { this.switching = false; this.changed(); this.message('Tap play to start'); } }
   }
-  pause() { this.wantsPlayback = false; this.audio.pause(); }
-  toggle() { if (this.audio.paused) this.play(); else this.pause(); }
+  pause() { this.wantsPlayback = false; this.switching = false; this.audio.pause(); }
+  toggle() { if (this.playing) this.pause(); else this.play(); }
   // キューの末尾に来たら止まる。リピート中は先頭へ戻り、シャッフル中なら並べ直す。
   next() {
     let next = this.index + 1;

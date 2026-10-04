@@ -33,6 +33,16 @@ export function durationLabel(seconds) {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
+// 聴かれた時刻を「どれくらい前」で。1 週間を過ぎたら日付。
+export function agoLabel(at, now = Date.now()) {
+  const seconds = Math.max(0, (now - at) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 7 * 86400) return `${Math.floor(seconds / 86400)}d ago`;
+  return new Date(at).toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
 // 行の保存ボタンが示す状態と、押したときの意味。
 export function saveControl({ saved, saving, gone, playing }) {
   if (saving) return { icon: 'progress_activity', label: 'Saving', busy: true, disabled: true };
