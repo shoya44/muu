@@ -62,14 +62,14 @@ test('request retries keep id and model changes update conversion presets', asyn
   await expect(card.locator('.generation-worker')).toContainText('PC offline');
   await expect(page.locator('#toast')).toBeHidden();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await card.screenshot({ path: 'test-results/generation-mobile.png' });
+  if (process.env.MUU_CAPTURE_GENERATION_SCREENSHOTS === '1') await card.screenshot({ path: 'test-results/generation-mobile.png' });
   await page.setViewportSize({ width: 390, height: 664 });
   await assertGenerateClearOfNavbar(page, card);
   await page.setViewportSize({ width: 390, height: 844 });
   await assertGenerateClearOfNavbar(page, card);
   await page.setViewportSize({ width: 1280, height: 900 });
   await assertGenerateClearOfNavbar(page, card);
-  await card.screenshot({ path: 'test-results/generation-desktop.png' });
+  if (process.env.MUU_CAPTURE_GENERATION_SCREENSHOTS === '1') await card.screenshot({ path: 'test-results/generation-desktop.png' });
   await card.getByLabel('URL').fill('https://example.com/video');
   await card.locator('.generation-advanced summary').click();
   await card.getByLabel('Voice').selectOption('voice-b');
@@ -132,8 +132,22 @@ test('PC code pairing works before catalog sync, hides code after submit, and ca
   await expect(card.getByRole('button', { name: 'Generate' })).toBeDisabled();
 
   const codeInput = card.getByLabel('PC connection code');
+  // Hold a Settings render after its active notification, then complete it while the one-time code is ready.
+  await page.evaluate(() => {
+    window.__heldEstimates = [];
+    Object.defineProperty(Object.getPrototypeOf(navigator.storage), 'estimate', {
+      configurable: true,
+      value: () => new Promise(resolve => window.__heldEstimates.push(() => resolve({ usage: 0, quota: 1000000 }))),
+    });
+  });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.waitForFunction(() => window.__heldEstimates.length > 0);
   await codeInput.fill('111111');
-  await card.getByRole('button', { name: 'Connect PC' }).click();
+  const pairButton = card.getByRole('button', { name: 'Connect PC' });
+  await expect(pairButton).toBeEnabled();
+  await page.evaluate(() => window.__heldEstimates.splice(0).forEach(release => release()));
+  await expect(pairButton).toBeEnabled();
+  await pairButton.click();
   await expect(card.locator('.generation-pair-message')).toContainText('invalid or expired');
   await expect(codeInput).toHaveValue('');
 

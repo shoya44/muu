@@ -133,10 +133,17 @@ export function mountGeneration({ root, authHeaders, onComplete, toast, icon }) 
   };
   const setActive = value => {
     const next = Boolean(value);
+    if (next === enabled) return;
     if (!next && submitPending) message.textContent = 'Request not confirmed. Retry to use the same request.';
     if (!next && pairPending) pairMessage.textContent = 'Connection not confirmed. Get a new code from your PC and retry.';
-    enabled = next; updateCard(); abort();
-    if (enabled) { void poll(epoch); }
+    enabled = next; updateCard();
+    if (!enabled) {
+      abort();
+      pairCode.value = '';
+      pairSubmit.disabled = true;
+      return;
+    }
+    void poll(epoch);
   };
   voice.addEventListener('change', updateModelPresets);
   pairCode.addEventListener('input', () => {
