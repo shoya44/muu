@@ -3,6 +3,7 @@ import { buildLibrary, etagFor, validName, isTrackKey, lyricsKeyFor, previousAft
 import { authorize, sameOrigin } from './auth.mjs';
 import { readPlays, updateStats, validReport, addReport, moveCount } from './stats.mjs';
 import { VERSION, BUILT } from '../public/version.mjs';
+import { handleGeneration } from './generation.mjs';
 
 const LIBRARY_TTL = 30; // 秒。一覧は R2 の list() を叩き直すより短く保つ。
 const MAX_UPLOAD = 95 * 1024 * 1024;
@@ -31,6 +32,9 @@ export default {
 };
 
 async function api(request, env, ctx, rest, url) {
+  if (url.pathname === '/api/generation' || url.pathname.startsWith('/api/generation/')) {
+    return handleGeneration(request, env, ctx, url, { forgetLibrary: () => forgetLibrary(ctx, url) });
+  }
   const [resource, ...path] = rest;
   if (resource === 'library' && !path.length) {
     if (request.method !== 'GET') return fail(405, 'method_not_allowed');

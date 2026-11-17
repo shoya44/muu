@@ -15,6 +15,7 @@ let tracks = [], saved = new Map(), store = PL.emptyStore();
 let settings = { sort: 'folder', sortChosen: false, autosave: false, resume: true, password: '', open: { storage: true, playback: false, library: false, app: false }, collapsed: [] };
 let downloading = false, controller, savingID, registration, toastTimer, libraryEtag = '', cloud = { used: 0, limit: 0 };
 let currentPlaylist = null, openView = 'home', adminOK = false, announcedUpdate = false;
+let generationModule = null, generationRoot = null, generationLoading = false;
 let activeKey, queueShape, selecting = null;
 const known = new Set();
 
@@ -71,6 +72,7 @@ function show(view) {
   const same = view === openView;
   scrolls[openView] = window.scrollY;
   openView = view;
+  generationModule?.setGenerationActive?.(generationRoot, openView === 'settings' && adminOK && !document.hidden);
   for (const section of document.querySelectorAll('.view')) section.hidden = section.dataset.view !== view;
   for (const button of document.querySelectorAll('.nav-item')) button.classList.toggle('on', button.dataset.nav === view);
   $('fab-add').hidden = !(view === 'playlists' && currentPlaylist);
@@ -666,6 +668,16 @@ async function renderSettings() {
   $('admin').hidden = !adminOK;
   $('recent-card').hidden = !adminOK;
   if (adminOK) { renderAdmin(); renderRecent(); if ($('recent-card').open) void loadStats().then(renderRecent); }
+  if (adminOK && !generationModule && !generationLoading) {
+    generationLoading = true;
+    import('./generation.mjs').then(module => {
+      const handle = module.mountGeneration({ root: $('view-settings'), authHeaders, onComplete: () => refresh(true), toast, icon });
+      generationRoot = handle;
+      generationModule = module;
+      module.setGenerationActive?.(generationRoot, openView === 'settings' && adminOK && !document.hidden);
+    }).catch(() => {}).finally(() => { generationLoading = false; });
+  }
+  generationModule?.setGenerationActive?.(generationRoot, openView === 'settings' && adminOK && !document.hidden);
 }
 // Recently played（管理者だけ）。全員の再生を、最後に聴かれた順に 50 曲まで。開いたときに取り直す。
 function renderRecent() {
@@ -690,6 +702,7 @@ $('check-update').onclick = () => checkUpdate(true);
 for (const card of document.querySelectorAll('#view-settings details')) card.addEventListener('toggle', () => { settings.open = { ...settings.open, [card.dataset.section]: card.open }; persistSettings(); });
 
 const authHeaders = () => ({ authorization: `Bearer ${settings.password}` });
+document.addEventListener('visibilitychange', () => generationModule?.setGenerationActive?.(generationRoot, openView === 'settings' && adminOK && !document.hidden));
 async function verifyPassword() {
   if (!settings.password) { adminOK = false; return; }
   try {
@@ -697,6 +710,7 @@ async function verifyPassword() {
     // 変更された古いパスワードは捨てる。起動のたびに警告しない。
     if (r.status === 401) { settings.password = ''; persistSettings(); toast('Wrong password'); }
   } catch { adminOK = false; }
+  generationModule?.setGenerationActive?.(generationRoot, openView === 'settings' && adminOK && !document.hidden);
   if (openView === 'settings') renderSettings();
 }
 $('password-form').onsubmit = async event => {
