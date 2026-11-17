@@ -17,6 +17,9 @@
   border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small);
   font: inherit; overflow-wrap: anywhere;
 }
+.generation-card input, .generation-card select, .generation-card button, .generation-card summary {
+  scroll-margin-block-end: calc(var(--muu-nav-height) + var(--muu-nav-inset) + 16px);
+}
 .generation-submit { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); cursor: pointer; }
 .generation-submit:disabled { opacity: .55; cursor: wait; }
 .generation-advanced { min-width: 0; }

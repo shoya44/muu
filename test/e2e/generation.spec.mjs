@@ -14,6 +14,18 @@ const catalog = {
   worker: { online: false, last_seen: null }, jobs: [],
 };
 
+async function assertGenerateClearOfNavbar(page, card) {
+  const button = card.getByRole('button', { name: 'Generate' });
+  await button.evaluate(node => node.scrollIntoView({ block: 'center', inline: 'nearest' }));
+  await expect.poll(() => page.evaluate(() => {
+    const buttonRect = document.querySelector('.generation-submit').getBoundingClientRect();
+    const navRect = document.querySelector('.navbar').getBoundingClientRect();
+    const center = document.elementFromPoint(buttonRect.left + buttonRect.width / 2, buttonRect.top + buttonRect.height / 2);
+    return buttonRect.bottom <= navRect.top && (center === document.querySelector('.generation-submit') || document.querySelector('.generation-submit').contains(center));
+  })).toBe(true);
+  await button.click({ trial: true });
+}
+
 async function unlock(page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -50,15 +62,12 @@ test('request retries keep id and model changes update conversion presets', asyn
   await expect(page.locator('#toast')).toBeHidden();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await card.screenshot({ path: 'test-results/generation-mobile.png' });
-  const generateButton = card.getByRole('button', { name: 'Generate' });
-  await generateButton.scrollIntoViewIfNeeded();
-  const mobileControlsClearNav = await page.evaluate(() => {
-    const button = document.querySelector('.generation-submit').getBoundingClientRect();
-    const nav = document.querySelector('.navbar').getBoundingClientRect();
-    return button.bottom <= nav.top;
-  });
-  expect(mobileControlsClearNav).toBe(true);
+  await page.setViewportSize({ width: 390, height: 664 });
+  await assertGenerateClearOfNavbar(page, card);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertGenerateClearOfNavbar(page, card);
   await page.setViewportSize({ width: 1280, height: 900 });
+  await assertGenerateClearOfNavbar(page, card);
   await card.screenshot({ path: 'test-results/generation-desktop.png' });
   await card.getByLabel('URL').fill('https://example.com/video');
   await card.locator('.generation-advanced summary').click();
