@@ -32,7 +32,7 @@ https://muu.take503503.workers.dev （main への push で自動デプロイ）
 ## CI / CD
 
 - `.github/workflows/ci.yml`：push / PR で `npm test`。
-- `.github/workflows/deploy.yml`：main への push で `wrangler deploy`。リポジトリ Secret `CLOUDFLARE_API_TOKEN`（Workers 編集権限）が無い間はスキップ。
+- `.github/workflows/deploy.yml`：main の push に対する CI が成功した後、その検証済みコミットをデプロイする。古い実行が後から最新の本番を上書きしないよう main の先頭も照合する。手動実行でも E2E を確認する。リポジトリ Secret `CLOUDFLARE_API_TOKEN`（Workers 編集権限）が無い間はスキップ。
 
 ## 進め方
 

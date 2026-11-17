@@ -13,6 +13,7 @@ const catalog = {
   },
   worker: { online: false, last_seen: null }, jobs: [],
 };
+const emptyCatalog = { enabled: true, catalog: { voices: [], mix_presets: [], default_voice: '' }, worker: { online: false, last_seen: null }, jobs: [] };
 
 async function assertGenerateClearOfNavbar(page, card) {
   const button = card.getByRole('button', { name: 'Generate' });
@@ -109,6 +110,51 @@ test('leaving Settings aborts a pending request without late UI updates', async 
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(card).toBeVisible();
   await expect(card.locator('.generation-message')).toContainText('not confirmed');
+});
+
+test('PC code pairing works before catalog sync, hides code after submit, and cancels stale approval UI', async ({ page }) => {
+  let paired = false;
+  const approvals = [];
+  await page.route('**/api/auth', route => route.fulfill({ status: 200, body: '{}' }));
+  await page.route('**/api/generation/pair/approve', async route => {
+    const body = route.request().postDataJSON();
+    approvals.push({ body, authorization: route.request().headers().authorization });
+    if (body.code === '111111') return route.fulfill({ status: 404, json: { error: 'pair_not_found' } });
+    await new Promise(resolve => setTimeout(resolve, body.code === '222222' ? 700 : 20));
+    paired = body.code === '333333';
+    return paired ? route.fulfill({ status: 200, json: { ok: true, worker_id: 'worker-id' } }) : route.fulfill({ status: 404, json: { error: 'pair_not_found' } });
+  });
+  await page.route('**/api/generation', route => route.fulfill({ json: paired ? catalog : emptyCatalog }));
+  await unlock(page);
+  const card = page.locator('.generation-card');
+  await expect(card).toBeVisible();
+  await expect(card.getByLabel('PC connection code')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Generate' })).toBeDisabled();
+
+  const codeInput = card.getByLabel('PC connection code');
+  await codeInput.fill('111111');
+  await card.getByRole('button', { name: 'Connect PC' }).click();
+  await expect(card.locator('.generation-pair-message')).toContainText('invalid or expired');
+  await expect(codeInput).toHaveValue('');
+
+  await codeInput.fill('222222');
+  await card.getByRole('button', { name: 'Connect PC' }).click();
+  await page.getByRole('button', { name: 'All Songs' }).click();
+  await page.waitForTimeout(850);
+  await expect(page.locator('#toast')).toBeHidden();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(card).toBeVisible();
+  await expect(card.locator('.generation-pair-message')).toContainText('not confirmed');
+  await expect(codeInput).toHaveValue('');
+
+  await codeInput.fill('333333');
+  await card.getByRole('button', { name: 'Connect PC' }).click();
+  await expect(card.locator('.generation-pair-message')).toContainText('PC connected');
+  await expect(card.getByRole('button', { name: 'Generate' })).toBeEnabled();
+  await expect(card.getByLabel('Voice')).toHaveValue('voice-a');
+  expect(approvals).toHaveLength(3);
+  expect(approvals.map(item => item.body)).toEqual([{ code: '111111' }, { code: '222222' }, { code: '333333' }]);
+  expect(approvals.every(item => item.authorization === 'Bearer devpass')).toBe(true);
 });
 
 test('newly completed generation refreshes library while current audio keeps playing', async ({ page }) => {

@@ -32,9 +32,17 @@ const request = (url, method = 'GET', body, headers = {}) => new Request(`https:
 const call = (req, e) => handleGeneration(req, e, { waitUntil() {} }, new URL(req.url));
 const json = async res => ({ status: res.status, body: await res.json() });
 const id = '123e4567-e89b-42d3-a456-426614174000';
+async function signedWorkerToken(payload) {
+  const encoded = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`muw1.${encoded}`)));
+  const encodedSignature = btoa(String.fromCharCode(...signature)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `muw1.${encoded}.${encodedSignature}`;
+}
 
 test('feature off and auth failures are closed', async () => {
   assert.equal((await call(request('/api/generation'), env('0'))).status, 404);
+  assert.equal((await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-1' }), env('0'))).status, 404);
   assert.equal((await call(new Request('https://muu.test/api/generation'), env())).status, 401);
   assert.equal((await call(request('/api/generation', 'GET', undefined, { 'sec-fetch-site': 'cross-site' }), env())).status, 403);
 });
@@ -81,7 +89,7 @@ test('claim, lease ownership, upload and done verification', async () => {
 test('invalid body and missing catalogue fail predictably', async () => {
   const e = env();
   assert.equal((await call(request('/api/generation', 'POST', '{'), e)).status, 400);
-  assert.equal((await call(request('/api/generation', 'GET'), e)).status, 503);
+  assert.deepEqual((await json(await call(request('/api/generation', 'GET'), e))).body.catalog, { voices: [], mix_presets: [], default_voice: '' });
 });
 
 test('corrupt state fails closed and preserves the original R2 bytes', async () => {
@@ -125,4 +133,91 @@ test('upload validates size, media type, quota and storage errors', async () => 
   const originalPut = e.MEDIA.put;
   e.MEDIA.put = async (...args) => { if (args[0] !== '_generation/state.json') throw new Error('R2 down'); return originalPut(...args); };
   assert.equal((await call(request(`/api/generation/worker/${id}/audio`, 'PUT', 'audio', { ...headers, 'content-length': '4' }), e)).status, 503);
+});
+
+test('PC pairing authorizes only its worker using a replayable signed token', async () => {
+  const e = env();
+  const started = (await json(await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-1' }), e))).body;
+  assert.match(started.code, /^\d{6}$/);
+  assert.match(started.claim_secret, /^[a-f0-9]{32}$/);
+  const persisted = JSON.stringify(JSON.parse(e.objects.get('_generation/state.json').body));
+  assert.equal(persisted.includes(started.code), false);
+  assert.equal(persisted.includes(started.claim_secret), false);
+  assert.equal((await call(request('/api/generation/pair/approve', 'POST', { code: '000000' }), e)).status, 404);
+  const pending = await json(await call(request('/api/generation/pair/poll', 'POST', { id: started.id, worker_id: 'bridge-1', claim_secret: started.claim_secret }), e));
+  assert.equal(pending.body.status, 'pending');
+  assert.equal((await call(request('/api/generation/pair/approve', 'POST', { code: started.code }), e)).status, 200);
+  const approved1 = await json(await call(request('/api/generation/pair/poll', 'POST', { id: started.id, worker_id: 'bridge-1', claim_secret: started.claim_secret }), e));
+  const approved2 = await json(await call(request('/api/generation/pair/poll', 'POST', { id: started.id, worker_id: 'bridge-1', claim_secret: started.claim_secret }), e));
+  assert.match(approved1.body.token, /^muw1\./);
+  assert.equal(approved2.body.token, approved1.body.token);
+
+  const tokenHeaders = { authorization: `Bearer ${approved1.body.token}` };
+  assert.equal((await call(request('/api/generation', 'GET', undefined, tokenHeaders), e)).status, 401);
+  assert.equal((await call(request('/api/generation', 'POST', { id, url: 'https://example.com/song', voice: 'v1', key: 'auto', preset: 'recommended', mix_preset: 'standard' }, tokenHeaders), e)).status, 401);
+  assert.equal((await call(request('/api/generation/pair/approve', 'POST', { code: started.code }, tokenHeaders), e)).status, 401);
+  assert.equal((await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'other', catalog: cat }, tokenHeaders), e)).status, 403);
+  const workerPoll = await json(await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'bridge-1', catalog: cat }, tokenHeaders), e));
+  assert.equal(workerPoll.body.lease_seconds, 120);
+  await call(request('/api/generation', 'POST', { id, url: 'https://example.com/song', voice: 'v1', key: 'auto', preset: 'recommended', mix_preset: 'standard' }, auth), e);
+  const claimed = await json(await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'bridge-1' }, tokenHeaders), e));
+  assert.equal(claimed.body.job.id, id);
+  assert.equal((await call(request(`/api/generation/worker/${id}`, 'POST', { worker_id: 'bridge-1', status: 'uploading' }, tokenHeaders), e)).status, 200);
+  assert.equal((await call(request(`/api/generation/worker/${id}/audio`, 'PUT', 'mp3', { ...tokenHeaders, 'content-type': 'audio/mpeg', 'content-length': '3', 'x-worker-id': 'bridge-1', 'x-duration': '5', 'x-title': 'Track' }), e)).status, 201);
+  assert.equal((await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'bridge-1' }, { authorization: `Bearer ${approved1.body.token.slice(0, -1)}x` }), e)).status, 401);
+  const expiredToken = await signedWorkerToken({ role: 'generation-worker', worker_id: 'bridge-1', iat: Math.floor(Date.now() / 1000) - 10, exp: Math.floor(Date.now() / 1000) - 1 });
+  assert.equal((await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'bridge-1' }, { authorization: `Bearer ${expiredToken}` }), e)).status, 401);
+  assert.equal((await call(request('/api/generation/worker/poll', 'POST', { worker_id: 'bridge-1' }, auth), e)).status, 200);
+});
+
+test('pair claim secrets, pair expiry, and pending limits are enforced', async () => {
+  const e = env();
+  const started = (await json(await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-1' }), e))).body;
+  assert.equal((await call(request('/api/generation/pair/poll', 'POST', { id: started.id, worker_id: 'bridge-1', claim_secret: '0'.repeat(32) }), e)).status, 401);
+  const stored = e.objects.get('_generation/state.json');
+  const state = JSON.parse(stored.body);
+  state.pairings[0].expires_at = '2000-01-01T00:00:00.000Z';
+  e.objects.set('_generation/state.json', { ...stored, body: JSON.stringify(state) });
+  const expired = await json(await call(request('/api/generation/pair/poll', 'POST', { id: started.id, worker_id: 'bridge-1', claim_secret: started.claim_secret }), e));
+  assert.equal(expired.body.status, 'expired');
+  assert.equal((await call(request('/api/generation/pair/approve', 'POST', { code: started.code }), e)).status, 404);
+});
+
+test('pair start rate and pending limits are bounded', async () => {
+  const e = env();
+  const codes = new Set();
+  for (let index = 0; index < 5; index++) {
+    const result = await json(await call(request('/api/generation/pair/start', 'POST', { worker_id: `bridge-${index}` }), e));
+    assert.equal(result.status, 201);
+    codes.add(result.body.code);
+  }
+  assert.equal(codes.size, 5);
+  assert.equal((await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-rate' }), e)).status, 429);
+  const stored = e.objects.get('_generation/state.json');
+  const state = JSON.parse(stored.body);
+  state.pair_rate = [];
+  e.objects.set('_generation/state.json', { ...stored, body: JSON.stringify(state) });
+  assert.equal((await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-pending' }), e)).status, 429);
+});
+
+test('pair start regenerates a code that collides with an active approval code', async () => {
+  const e = env();
+  const first = (await json(await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-first' }), e))).body;
+  const originalRandom = crypto.getRandomValues.bind(crypto);
+  const values = [Number(first.code), (Number(first.code) + 1) % 1_000_000];
+  let at = 0;
+  crypto.getRandomValues = array => {
+    if (array instanceof Uint32Array) { array[0] = values[Math.min(at++, values.length - 1)]; return array; }
+    return originalRandom(array);
+  };
+  try {
+    const second = (await json(await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-second' }), e))).body;
+    assert.notEqual(second.code, first.code);
+    assert.equal(second.code, String(values[1]).padStart(6, '0'));
+  } finally { crypto.getRandomValues = originalRandom; }
+});
+
+test('pairing is unavailable without the existing admin secret', async () => {
+  const e = env(); e.ADMIN_PASSWORD = '';
+  assert.equal((await call(request('/api/generation/pair/start', 'POST', { worker_id: 'bridge-1' }), e)).status, 503);
 });

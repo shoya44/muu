@@ -1,24 +1,49 @@
 name: Deploy
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: muu-production
+      cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 73e71cfc7b30cca7fa6c8f6c26039ceb
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24.19.0
           cache: npm
       - run: npm ci
       - run: npm test
+      - if: github.event_name == 'workflow_dispatch'
+        run: npx playwright install --with-deps chromium
+      - if: github.event_name == 'workflow_dispatch'
+        run: echo "ADMIN_PASSWORD=devpass" > .dev.vars
+      - if: github.event_name == 'workflow_dispatch'
+        run: npm run test:e2e
+      - id: current
+        name: Check this is still the latest main commit
+        run: |
+          latest=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$(git rev-parse HEAD)" = "$latest" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
       - run: node scripts/stamp.mjs
-      - if: env.CLOUDFLARE_API_TOKEN != ''
+      - if: steps.current.outputs.publish == 'true' && env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy
       - if: env.CLOUDFLARE_API_TOKEN == ''
         run: echo "CLOUDFLARE_API_TOKEN が未設定のためデプロイをスキップ"

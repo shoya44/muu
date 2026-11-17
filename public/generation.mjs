@@ -20,6 +20,16 @@ export function mountGeneration({ root, authHeaders, onComplete, toast, icon }) 
   card.setAttribute('aria-label', 'Generate');
   const heading = text('h2', 'generation-heading', 'Generate');
   const worker = text('p', 'generation-worker');
+  const pairDetails = text('details', 'generation-pair');
+  const pairSummary = text('summary', '', 'Connect PC');
+  const pairHelp = text('p', 'generation-pair-help', 'Enter the code shown on your PC.');
+  const pairForm = text('form', 'generation-pair-form');
+  const pairCode = text('input', 'generation-pair-code');
+  pairCode.type = 'text'; pairCode.inputMode = 'numeric'; pairCode.pattern = '[0-9]{6}'; pairCode.maxLength = 6; pairCode.required = true; pairCode.autocomplete = 'one-time-code'; pairCode.placeholder = '6-digit code'; pairCode.setAttribute('aria-label', 'PC connection code');
+  const pairSubmit = text('button', 'generation-pair-submit', 'Connect PC'); pairSubmit.type = 'submit'; pairSubmit.disabled = true;
+  const pairMessage = text('p', 'generation-pair-message'); pairMessage.setAttribute('role', 'status');
+  pairForm.append(pairCode, pairSubmit);
+  pairDetails.append(pairSummary, pairHelp, pairForm, pairMessage);
   const form = text('form', 'generation-form');
   const url = text('input', 'generation-url'); url.type = 'url'; url.required = true; url.placeholder = 'Video or audio URL'; url.setAttribute('aria-label', 'URL');
   const voice = text('select', 'generation-voice'); voice.setAttribute('aria-label', 'Voice');
@@ -35,15 +45,15 @@ export function mountGeneration({ root, authHeaders, onComplete, toast, icon }) 
   const message = text('p', 'generation-message'); message.setAttribute('role', 'status');
   const jobs = text('div', 'generation-jobs');
   form.append(url, voice, key, advanced, submit);
-  card.append(heading, worker, form, message, jobs);
+  card.append(heading, worker, pairDetails, form, message, jobs);
   const anchor = root.querySelector('#recent-card') || root.querySelector('#admin');
   root.insertBefore(card, anchor);
 
-  let enabled = false, busy = false, timer = null, controller = null, submitController = null, epoch = 0, catalog = null;
+  let enabled = false, busy = false, timer = null, controller = null, submitController = null, pairController = null, epoch = 0, catalog = null;
   let formVersion = 0, requestState = {}, initializedJobs = false;
-  let catalogReady = false, submitPending = false, pollAgain = false;
+  let catalogReady = false, submitPending = false, pairPending = false, pollAgain = false;
   const completed = new Set();
-  const abort = () => { epoch++; controller?.abort(); controller = null; submitController?.abort(); submitController = null; submitPending = false; submit.disabled = true; clearTimeout(timer); timer = null; pollAgain = false; };
+  const abort = () => { epoch++; controller?.abort(); controller = null; submitController?.abort(); submitController = null; pairController?.abort(); pairController = null; submitPending = false; pairPending = false; submit.disabled = true; pairSubmit.disabled = true; clearTimeout(timer); timer = null; pollAgain = false; };
   const active = () => enabled && !card.hidden && !document.hidden;
   const updateCard = () => { card.hidden = !enabled; };
   const refreshChoices = body => {
@@ -68,6 +78,8 @@ export function mountGeneration({ root, authHeaders, onComplete, toast, icon }) 
       : (catalog.mix_presets.some(item => item.id === 'standard') ? 'standard' : catalog.mix_presets[0]?.id || '');
     catalogReady = true;
     submit.disabled = submitPending || !catalog.voices.length || !validPresets.length || !catalog.mix_presets.length;
+      pairDetails.hidden = Boolean(body.worker?.online);
+      if (!hadCatalog && !catalog.voices.length) pairDetails.open = true;
     if (hadCatalog && (voiceChanged || preset.value !== previousPreset || mixPreset.value !== previousMix)) changed();
   };
   const updateModelPresets = () => {
@@ -122,10 +134,49 @@ export function mountGeneration({ root, authHeaders, onComplete, toast, icon }) 
   const setActive = value => {
     const next = Boolean(value);
     if (!next && submitPending) message.textContent = 'Request not confirmed. Retry to use the same request.';
+    if (!next && pairPending) pairMessage.textContent = 'Connection not confirmed. Get a new code from your PC and retry.';
     enabled = next; updateCard(); abort();
     if (enabled) { void poll(epoch); }
   };
   voice.addEventListener('change', updateModelPresets);
+  pairCode.addEventListener('input', () => {
+    pairCode.value = pairCode.value.replace(/\D/g, '').slice(0, 6);
+    pairSubmit.disabled = pairCode.value.length !== 6 || pairPending;
+  });
+  pairForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!/^\d{6}$/.test(pairCode.value) || pairSubmit.disabled || !active()) return;
+    const code = pairCode.value;
+    pairCode.value = '';
+    pairSubmit.disabled = true; pairPending = true; pairMessage.textContent = 'Connecting…';
+    const token = epoch;
+    const local = new AbortController(); pairController = local;
+    try {
+      const response = await fetch('/api/generation/pair/approve', {
+        method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ code }), signal: local.signal,
+      });
+      if (token !== epoch || !active()) return;
+      if (response.status === 401) { enabled = false; updateCard(); abort(); return; }
+      const result = await response.json().catch(() => ({}));
+      if (token !== epoch || !active()) return;
+      if (response.status === 404 && result.error === 'pair_not_found') {
+        pairMessage.textContent = 'That code is invalid or expired. Get a new code from your PC.';
+        return;
+      }
+      if (response.status === 404) { enabled = false; updateCard(); abort(); return; }
+      if (!response.ok) { pairMessage.textContent = 'Could not connect PC. Try again with a new code.'; return; }
+      pairDetails.open = false;
+      pairMessage.textContent = 'PC connected. Waiting for voices…';
+      toast('PC connected');
+      void poll(epoch);
+    } catch {
+      if (token === epoch && active()) pairMessage.textContent = 'Could not connect PC. Try again with a new code.';
+    } finally {
+      if (pairController === local) pairController = null;
+      if (token === epoch) { pairPending = false; pairSubmit.disabled = pairCode.value.length !== 6; }
+    }
+  });
   for (const field of [url, key, preset, mixPreset]) field.addEventListener('change', changed);
   form.addEventListener('input', event => { if (event.target === url) changed(); });
   form.addEventListener('submit', async event => {
